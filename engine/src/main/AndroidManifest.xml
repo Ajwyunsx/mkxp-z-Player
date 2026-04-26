@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application>
+        <activity
+            android:name=".GameActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:immersive="true"
+            android:launchMode="singleTask"
+            android:preferMinimalPostProcessing="true"
+            android:process=":game"
+            android:resizeableActivity="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.MkxpGame" />
+        <activity
+            android:name=".SdlGameActivity"
+            android:alwaysRetainTaskState="true"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|density|keyboard|keyboardHidden|navigation"
+            android:exported="false"
+            android:immersive="true"
+            android:launchMode="singleTop"
+            android:preferMinimalPostProcessing="true"
+            android:resizeableActivity="true"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.MkxpGame" />
+        <activity
+            android:name=".WebGameActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:immersive="true"
+            android:launchMode="singleTask"
+            android:preferMinimalPostProcessing="true"
+            android:process=":game"
+            android:resizeableActivity="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.MkxpGame" />
+    </application>
+</manifest>
