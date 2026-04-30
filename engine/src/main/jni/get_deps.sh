@@ -124,6 +124,21 @@ extract_archive_dep() {
   rm -f "$archive"
 }
 
+apply_patch_once() {
+  local name check_file check_pattern patch_file
+  name="$1"
+  check_file="$2"
+  check_pattern="$3"
+  patch_file="$4"
+
+  if grep -q "$check_pattern" "$check_file"; then
+    return 0
+  fi
+
+  echo "Applying $name..."
+  patch -p0 < "$patch_file"
+}
+
 # Xiph libogg
 extract_archive_dep \
   libogg configure libogg-1.3.5.tar.gz libogg-1.3.5 \
@@ -179,6 +194,16 @@ extract_archive_dep \
   SDL2 Android.mk SDL2-2.26.3.tar.gz SDL2-2.26.3 \
   https://github.com/libsdl-org/SDL/releases/download/release-2.26.3/SDL2-2.26.3.tar.gz \
   https://www.libsdl.org/release/SDL2-2.26.3.tar.gz
+apply_patch_once \
+  "SDL2 Android RGSS-thread GL resume patch" \
+  SDL2/src/video/android/SDL_androidevents.c \
+  "current_context = SDL_GL_GetCurrentContext" \
+  patches/sdl2-android-rgss-thread-gl-resume.patch
+apply_patch_once \
+  "SDL2 Android surface destroy wait patch" \
+  SDL2/src/core/android/SDL_android.c \
+  "int nb_attempt = 250" \
+  patches/sdl2-android-surface-destroy-wait.patch
 
 # SDL2_image
 extract_archive_dep \

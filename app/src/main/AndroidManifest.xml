@@ -31,6 +31,13 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MkxpLauncher">
+        <meta-data
+            android:name="SDL_ENV.SDL_ANDROID_BLOCK_ON_PAUSE"
+            android:value="0" />
+        <meta-data
+            android:name="SDL_ENV.SDL_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO"
+            android:value="0" />
+
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"

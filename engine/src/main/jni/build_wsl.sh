@@ -47,15 +47,17 @@ copy_sources() {
   if [[ "${MKXP_WSL_RESUME:-0}" == "1" && -d "$BUILD_ROOT" ]]; then
     echo "    resume: preserving existing dependency/build directories"
     find "$SRC_DIR" -maxdepth 1 -type f -exec cp -a {} "$BUILD_ROOT"/ \;
-    mkdir -p "$BUILD_ROOT/mkxp-z" "$BUILD_ROOT/preconfigured"
+    mkdir -p "$BUILD_ROOT/mkxp-z" "$BUILD_ROOT/preconfigured" "$BUILD_ROOT/patches"
     cp -a "$SRC_DIR/mkxp-z"/. "$BUILD_ROOT/mkxp-z"/
     cp -a "$SRC_DIR/preconfigured"/. "$BUILD_ROOT/preconfigured"/
+    cp -a "$SRC_DIR/patches"/. "$BUILD_ROOT/patches"/
   else
     rm -rf "$BUILD_ROOT"
     mkdir -p "$BUILD_ROOT"
     find "$SRC_DIR" -maxdepth 1 -type f -exec cp -a {} "$BUILD_ROOT"/ \;
     cp -a "$SRC_DIR/mkxp-z" "$BUILD_ROOT"/
     cp -a "$SRC_DIR/preconfigured" "$BUILD_ROOT"/
+    cp -a "$SRC_DIR/patches" "$BUILD_ROOT"/
   fi
   find "$BUILD_ROOT" -maxdepth 1 -type f \( -name "*.sh" -o -name "*.mk" -o -name "Makefile" \) -exec sed -i 's/\r$//' {} +
   find "$BUILD_ROOT/mkxp-z" -type f -name "*.sh" -exec sed -i 's/\r$//' {} +

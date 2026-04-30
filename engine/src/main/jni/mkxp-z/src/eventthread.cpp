@@ -279,10 +279,21 @@ void EventThread::process(RGSSThreadData &rtData)
 
 						windowSizeMsg.post(Vec2i(winW, winH));
 						drawableSizeMsg.post(Vec2i(drwW, drwH));
+#ifdef MKXPZ_BUILD_ANDROID
+						rtData.rqGlRebind.set();
+#endif
 
 						resetInputStates();
 
 						break;
+
+#ifdef MKXPZ_BUILD_ANDROID
+					case SDL_WINDOWEVENT_RESTORED:
+					case SDL_WINDOWEVENT_SHOWN:
+					case SDL_WINDOWEVENT_EXPOSED:
+						rtData.rqGlRebind.set();
+						break;
+#endif
 
 					case SDL_WINDOWEVENT_ENTER:
 						cursorInWindow = true;
@@ -302,6 +313,9 @@ void EventThread::process(RGSSThreadData &rtData)
 
 					case SDL_WINDOWEVENT_FOCUS_GAINED:
 						windowFocused = true;
+#ifdef MKXPZ_BUILD_ANDROID
+						rtData.rqGlRebind.set();
+#endif
 						updateCursorState(cursorInWindow && windowFocused && !sMenu, gameScreen);
 						break;
 
@@ -652,6 +666,7 @@ int EventThread::eventFilter(void *data, SDL_Event *event)
 			if (HAVE_ALC_DEVICE_PAUSE)
 				alc.DeviceResume(rtData.alcDev);
 
+			rtData.rqGlRebind.set();
 			rtData.syncPoint.resumeThreads();
 
 			return 0;
@@ -664,15 +679,15 @@ int EventThread::eventFilter(void *data, SDL_Event *event)
 			Debug() << "SDL_APP_LOWMEMORY";
 			return 0;
 
-		/*
 		case SDL_RENDER_TARGETS_RESET :
 			Debug() << "****** SDL_RENDER_TARGETS_RESET";
+			rtData.rqGlRebind.set();
 			return 0;
 
 		case SDL_RENDER_DEVICE_RESET :
 			Debug() << "****** SDL_RENDER_DEVICE_RESET";
+			rtData.rqGlRebind.set();
 			return 0;
-		*/
 	}
 
 	return 1;
@@ -869,22 +884,31 @@ void EventThread::lockText(bool lock)
 	lock ? SDL_LockMutex(textInputLock) : SDL_UnlockMutex(textInputLock);
 }
 
-void SyncPoint::haltThreads()
+bool SyncPoint::haltThreads()
 {
 	if (mainSync.locked)
-		return;
+		return true;
 
 	// Lock the reply sync first to avoid races
 	reply.lock();
 
 	// Lock main sync and sleep until RGSS thread reports back
 	mainSync.lock();
+#ifdef MKXPZ_BUILD_ANDROID
+	if (!reply.waitForUnlockTimeout(1800)) {
+		Debug() << "SyncPoint::haltThreads timed out on Android; keeping RGSS pause pending";
+		reply.unlock(false);
+		return false;
+	}
+#else
 	reply.waitForUnlock();
+#endif
 
 	/* Now that the RGSS thread is asleep, we can
 	 * safely put the other threads to sleep as well
 	 * without causing deadlocks */
 	secondSync.lock();
+	return true;
 }
 
 void SyncPoint::resumeThreads()
@@ -892,6 +916,7 @@ void SyncPoint::resumeThreads()
 	if (!mainSync.locked)
 		return;
 
+	reply.unlock(false);
 	mainSync.unlock(false);
 	secondSync.unlock(true);
 }
@@ -952,4 +977,18 @@ void SyncPoint::Util::waitForUnlock()
 	}
 
 	SDL_UnlockMutex(mut);
+}
+
+bool SyncPoint::Util::waitForUnlockTimeout(uint32_t timeoutMs)
+{
+	SDL_LockMutex(mut);
+
+	while (locked) {
+		if (SDL_CondWaitTimeout(cond, mut, timeoutMs) == SDL_MUTEX_TIMEDOUT)
+			break;
+	}
+
+	bool unlocked = !locked;
+	SDL_UnlockMutex(mut);
+	return unlocked;
 }

@@ -199,7 +199,7 @@ private:
 struct SyncPoint
 {
 	/* Used by eventFilter to control sleep/wakeup */
-	void haltThreads();
+	bool haltThreads();
 	void resumeThreads();
 	/* Used by RGSS thread */
 	bool mainSyncLocked();
@@ -217,6 +217,7 @@ private:
 		void lock();
 		void unlock(bool multi);
 		void waitForUnlock();
+		bool waitForUnlockTimeout(uint32_t timeoutMs);
 
 		AtomicFlag locked;
 		SDL_mutex *mut;
@@ -244,6 +245,10 @@ struct RGSSThreadData
     
     // Set when window is being adjusted (resize, reposition)
     AtomicFlag rqWindowAdjust;
+
+    /* Set after Android resumes so the RGSS render thread can bind
+     * its GL context to the recreated surface before drawing again. */
+    AtomicFlag rqGlRebind;
 
 	EventThread *ethread;
 	UnidirMessage<Vec2i> windowSizeMsg;

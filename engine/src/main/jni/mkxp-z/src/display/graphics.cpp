@@ -1094,8 +1094,45 @@ struct GraphicsPrivate {
         SDL_GL_MakeCurrent(threadData->window, 0);
         threadData->syncPoint.waitMainSync();
         SDL_GL_MakeCurrent(threadData->window, glCtx);
+        threadData->rqGlRebind.set();
         
         fpsLimiter.resetFrameAdjust();
+    }
+
+    bool rebindGLAfterResume() {
+        if (!threadData->rqGlRebind)
+            return true;
+
+        int winW = 0;
+        int winH = 0;
+        int drwW = 0;
+        int drwH = 0;
+
+        SDL_GetWindowSize(threadData->window, &winW, &winH);
+        SDL_GL_GetDrawableSize(threadData->window, &drwW, &drwH);
+
+        if (winW <= 0 || winH <= 0 || drwW <= 0 || drwH <= 0) {
+            SDL_Delay(16);
+            return false;
+        }
+
+        if (SDL_GL_MakeCurrent(threadData->window, glCtx) < 0) {
+            Debug() << "Graphics: failed to rebind GL context after Android resume:" << SDL_GetError();
+            SDL_Delay(16);
+            return false;
+        }
+
+        threadData->windowSizeMsg.post(Vec2i(winW, winH));
+        threadData->drawableSizeMsg.post(Vec2i(drwW, drwH));
+
+        checkResize();
+        FBO::unbind();
+        glState.viewport.refresh();
+        threadData->rqGlRebind.clear();
+        fpsLimiter.resetFrameAdjust();
+
+        Debug() << "Graphics: rebound GL context after Android resume";
+        return true;
     }
     
     double averageFPS() {
@@ -1153,6 +1190,8 @@ void Graphics::update(bool checkForShutdown) {
         p->checkShutDownReset();
     
     p->checkSyncLock();
+    if (!p->rebindGLAfterResume())
+        return;
     
     
 #ifdef MKXPZ_STEAM
@@ -1193,6 +1232,8 @@ void Graphics::freeze() {
 
 void Graphics::transition(int duration, const char *filename, int vague) {
     p->checkSyncLock();
+    if (!p->rebindGLAfterResume())
+        return;
     
     if (!p->frozen)
         return;
@@ -1256,6 +1297,10 @@ void Graphics::transition(int duration, const char *filename, int vague) {
         }
         
         p->checkSyncLock();
+        if (!p->rebindGLAfterResume()) {
+            --i;
+            continue;
+        }
         
         const float prog = i * (1.0f / duration);
         
@@ -1322,6 +1367,9 @@ double Graphics::averageFrameRate() {
 void Graphics::wait(int duration) {
     for (int i = 0; i < duration; ++i) {
         p->checkShutDownReset();
+        p->checkSyncLock();
+        if (!p->rebindGLAfterResume())
+            continue;
         p->redrawScreen();
     }
 }
@@ -1621,6 +1669,13 @@ Scene *Graphics::getScreen() const { return &p->screen; }
 void Graphics::repaintWait(const AtomicFlag &exitCond, bool checkReset) {
     if (exitCond)
         return;
+
+    p->checkSyncLock();
+    while (!exitCond && !p->rebindGLAfterResume())
+        ;
+
+    if (exitCond)
+        return;
     
     /* Repaint the screen with the last good frame we drew */
     TEXFBO &lastFrame = p->screen.getPP().frontBuffer();
@@ -1632,6 +1687,10 @@ void Graphics::repaintWait(const AtomicFlag &exitCond, bool checkReset) {
         
         if (checkReset)
             shState->checkReset();
+
+        p->checkSyncLock();
+        if (!p->rebindGLAfterResume())
+            continue;
         
         FBO::clear();
         p->metaBlitBufferFlippedScaled();

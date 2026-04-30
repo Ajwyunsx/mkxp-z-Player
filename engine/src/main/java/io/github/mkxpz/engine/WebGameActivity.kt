@@ -19,10 +19,12 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -381,19 +383,21 @@ class WebGameActivity : Activity() {
         if (isFinishing || playerMenuDialog?.isShowing == true) return
 
         val gamepadAction = if (virtualGamepad) "隐藏虚拟按键" else "显示虚拟按键"
+        val movementAction = if (gamepad.isJoystickMode) "切换为十字键" else "切换为摇杆"
         val layoutEditAction = if (gamepadLayoutEditing) "结束按键布局编辑" else "编辑按键布局"
-        val items = arrayOf("继续游戏", gamepadAction, "虚拟按键设置", layoutEditAction, "保存按键布局", "重新加载游戏", "退出到启动器")
+        val items = arrayOf("继续游戏", gamepadAction, movementAction, "虚拟按键设置", layoutEditAction, "保存按键布局", "重新加载游戏", "退出到启动器")
         playerMenuDialog = AlertDialog.Builder(this)
             .setTitle("播放器选项")
             .setItems(items) { dialog, which ->
                 dialog.dismiss()
                 when (which) {
                     1 -> setVirtualGamepadEnabled(!virtualGamepad)
-                    2 -> showGamepadSettings()
-                    3 -> setGamepadLayoutEditing(!gamepadLayoutEditing)
-                    4 -> saveGamepadLayout()
-                    5 -> reloadGame()
-                    6 -> finish()
+                    2 -> toggleMovementMode()
+                    3 -> showGamepadSettings()
+                    4 -> setGamepadLayoutEditing(!gamepadLayoutEditing)
+                    5 -> saveGamepadLayout()
+                    6 -> reloadGame()
+                    7 -> finish()
                 }
             }
             .setOnDismissListener {
@@ -455,11 +459,21 @@ class WebGameActivity : Activity() {
         addKeyPicker(content, "ALT", working.keycodeALT) { working.keycodeALT = it }
         addKeyPicker(content, "SHIFT", working.keycodeSHIFT) { working.keycodeSHIFT = it }
 
+        content.addView(TextView(this).apply {
+            text = "添加自定义按键"
+            gravity = Gravity.CENTER
+            setPadding(16, 18, 16, 18)
+            setOnClickListener { showAddCustomButtonDialog() }
+        })
+
         AlertDialog.Builder(this)
             .setTitle("虚拟按键设置")
             .setView(ScrollView(this).apply { addView(content) })
             .setPositiveButton("应用") { _, _ ->
+                gamepadConfig.applyFrom(working)
+                working.layout = gamepad.exportLayout()
                 gamepadConfig = working
+                MkxpLauncher.saveGamepadLayout(this, working.layout)
                 reinstallGamepad()
                 keepFullscreen()
             }
@@ -510,6 +524,77 @@ class WebGameActivity : Activity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun toggleMovementMode() {
+        if (!ensureGamepadReady()) return
+
+        val joystick = gamepad.toggleMovementMode()
+        gamepadConfig.layout = gamepad.exportLayout()
+        Toast.makeText(this, if (joystick) "已切换为摇杆" else "已切换为十字键", Toast.LENGTH_SHORT).show()
+        keepFullscreen()
+    }
+
+    private fun showAddCustomButtonDialog() {
+        if (!ensureGamepadReady()) return
+
+        val labels = commonKeyCodes.map(::keyLabel)
+        var sizeDp = 46
+        val spinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@WebGameActivity,
+                android.R.layout.simple_spinner_item,
+                labels,
+            ).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+        }
+
+        val sizeLabel = TextView(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 0)
+            addView(spinner)
+            addView(sizeLabel)
+            addView(SeekBar(this@WebGameActivity).apply {
+                max = 68
+                progress = sizeDp - 28
+                setOnSeekBarChangeListener(simpleSeekListener {
+                    sizeDp = progress + 28
+                    sizeLabel.text = "按键大小：${sizeDp}dp"
+                })
+            })
+        }
+        sizeLabel.text = "按键大小：${sizeDp}dp"
+
+        AlertDialog.Builder(this)
+            .setTitle("添加自定义按键")
+            .setView(content)
+            .setPositiveButton("添加") { _, _ ->
+                val keyCode = commonKeyCodes[spinner.selectedItemPosition.coerceAtLeast(0)]
+                gamepad.addCustomButton(keyLabel(keyCode), keyCode, sizeDp)
+                gamepadLayoutEditing = true
+                gamepad.setLayoutEditMode(true)
+                gamepadConfig.layout = gamepad.exportLayout()
+                Toast.makeText(this, "已添加，拖动到位置后请保存布局", Toast.LENGTH_SHORT).show()
+                keepFullscreen()
+            }
+            .setNegativeButton("取消") { _, _ -> keepFullscreen() }
+            .show()
+    }
+
+    private fun ensureGamepadReady(): Boolean {
+        if (!virtualGamepad) {
+            Toast.makeText(this, "虚拟按键未启用", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        installGamepad()
+        if (!gamepadAttached) return false
+        if (gamepadInvisible) {
+            gamepad.showView()
+            gamepadInvisible = false
+        }
+        return true
     }
 
     private fun setVirtualGamepadEnabled(enabled: Boolean) {
@@ -627,6 +712,7 @@ class WebGameActivity : Activity() {
         it.opacity = opacity
         it.scale = scale
         it.diagonalMovement = diagonalMovement
+        it.joystickMode = joystickMode
         it.keycodeA = keycodeA
         it.keycodeB = keycodeB
         it.keycodeC = keycodeC
@@ -639,6 +725,24 @@ class WebGameActivity : Activity() {
         it.keycodeALT = keycodeALT
         it.keycodeSHIFT = keycodeSHIFT
         it.layout = layout
+    }
+
+    private fun GamepadConfig.applyFrom(source: GamepadConfig) {
+        opacity = source.opacity
+        scale = source.scale
+        diagonalMovement = source.diagonalMovement
+        joystickMode = source.joystickMode
+        keycodeA = source.keycodeA
+        keycodeB = source.keycodeB
+        keycodeC = source.keycodeC
+        keycodeX = source.keycodeX
+        keycodeY = source.keycodeY
+        keycodeZ = source.keycodeZ
+        keycodeL = source.keycodeL
+        keycodeR = source.keycodeR
+        keycodeCTRL = source.keycodeCTRL
+        keycodeALT = source.keycodeALT
+        keycodeSHIFT = source.keycodeSHIFT
     }
 
     private fun simpleSeekListener(onProgressChanged: SeekBar.() -> Unit): SeekBar.OnSeekBarChangeListener =

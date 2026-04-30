@@ -18,8 +18,13 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup.LayoutParams;
+import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.ScrollView;
+import android.widget.SeekBar;
+import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -248,10 +253,15 @@ public class SdlGameActivity extends SDLActivity {
         String editToggle = mGamepadLayoutEditing
                 ? "\u9000\u51fa\u5e03\u5c40\u7f16\u8f91"
                 : "\u7f16\u8f91\u6309\u952e\u5e03\u5c40";
+        String movementToggle = mGamepad.isJoystickMode()
+                ? "\u5207\u6362\u4e3a\u5341\u5b57\u952e"
+                : "\u5207\u6362\u4e3a\u6447\u6746";
 
         String[] items = new String[] {
                 "\u7ee7\u7eed\u6e38\u620f",
                 gamepadToggle,
+                movementToggle,
+                "\u865a\u62df\u6309\u952e\u8bbe\u7f6e",
                 editToggle,
                 "\u4fdd\u5b58\u6309\u952e\u5e03\u5c40",
                 "\u9000\u51fa\u6e38\u620f"
@@ -263,10 +273,14 @@ public class SdlGameActivity extends SDLActivity {
                     if (which == 1) {
                         toggleGamepadVisibility();
                     } else if (which == 2) {
-                        toggleGamepadLayoutEdit();
+                        toggleMovementMode();
                     } else if (which == 3) {
-                        saveGamepadLayout();
+                        showGamepadSettings();
                     } else if (which == 4) {
+                        toggleGamepadLayoutEdit();
+                    } else if (which == 5) {
+                        saveGamepadLayout();
+                    } else if (which == 6) {
                         finish();
                     }
                 })
@@ -302,10 +316,191 @@ public class SdlGameActivity extends SDLActivity {
         ).show();
     }
 
+    private void toggleMovementMode() {
+        if (!ensureGamepadReady()) {
+            return;
+        }
+
+        boolean joystick = mGamepad.toggleMovementMode();
+        mGamepadConfig.layout = mGamepad.exportLayout();
+        Toast.makeText(
+                this,
+                joystick ? "\u5df2\u5207\u6362\u4e3a\u6447\u6746" : "\u5df2\u5207\u6362\u4e3a\u5341\u5b57\u952e",
+                Toast.LENGTH_SHORT
+        ).show();
+    }
+
+    private void showGamepadSettings() {
+        if (!ensureGamepadReady()) {
+            return;
+        }
+
+        GamepadConfig working = copyGamepadConfig(mGamepadConfig);
+        working.layout = mGamepad.exportLayout();
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(32), dp(18), dp(32), 0);
+
+        TextView opacityLabel = new TextView(this);
+        final int[] opacity = new int[] { clamp(working.opacity, 5, 100) };
+        opacityLabel.setText("\u900f\u660e\u5ea6\uff1a" + opacity[0] + "%");
+        SeekBar opacitySeek = new SeekBar(this);
+        opacitySeek.setMax(95);
+        opacitySeek.setProgress(opacity[0] - 5);
+        opacitySeek.setOnSeekBarChangeListener(new SimpleSeekListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) {
+                    return;
+                }
+                opacity[0] = progress + 5;
+                working.opacity = opacity[0];
+                opacityLabel.setText("\u900f\u660e\u5ea6\uff1a" + opacity[0] + "%");
+            }
+        });
+        content.addView(opacityLabel);
+        content.addView(opacitySeek);
+
+        TextView scaleLabel = new TextView(this);
+        final int[] scale = new int[] { clamp(working.scale, 60, 160) };
+        scaleLabel.setText("\u5927\u5c0f\uff1a" + scale[0] + "%");
+        SeekBar scaleSeek = new SeekBar(this);
+        scaleSeek.setMax(100);
+        scaleSeek.setProgress(scale[0] - 60);
+        scaleSeek.setOnSeekBarChangeListener(new SimpleSeekListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) {
+                    return;
+                }
+                scale[0] = progress + 60;
+                working.scale = scale[0];
+                scaleLabel.setText("\u5927\u5c0f\uff1a" + scale[0] + "%");
+            }
+        });
+        content.addView(scaleLabel);
+        content.addView(scaleSeek);
+
+        Switch diagonalSwitch = new Switch(this);
+        diagonalSwitch.setText("\u65b9\u5411\u952e\u5141\u8bb8\u659c\u5411\u79fb\u52a8");
+        diagonalSwitch.setChecked(Boolean.TRUE.equals(working.diagonalMovement));
+        diagonalSwitch.setOnCheckedChangeListener((buttonView, checked) -> working.diagonalMovement = checked);
+        content.addView(diagonalSwitch);
+
+        TextView addCustomButton = new TextView(this);
+        addCustomButton.setText("\u6dfb\u52a0\u81ea\u5b9a\u4e49\u6309\u952e");
+        addCustomButton.setGravity(Gravity.CENTER);
+        addCustomButton.setPadding(dp(12), dp(12), dp(12), dp(12));
+        addCustomButton.setOnClickListener(view -> showAddCustomButtonDialog());
+        content.addView(addCustomButton);
+
+        new AlertDialog.Builder(this)
+                .setTitle("\u865a\u62df\u6309\u952e\u8bbe\u7f6e")
+                .setView(wrapInScrollView(content))
+                .setPositiveButton("\u5e94\u7528", (dialog, which) -> {
+                    applyConfigFields(mGamepadConfig, working);
+                    working.layout = mGamepad.exportLayout();
+                    mGamepadConfig = working;
+                    MkxpLauncher.INSTANCE.saveGamepadLayout(this, working.layout);
+                    reinstallGamepad();
+                })
+                .setNegativeButton("\u53d6\u6d88", null)
+                .show();
+    }
+
+    private void showAddCustomButtonDialog() {
+        if (!ensureGamepadReady()) {
+            return;
+        }
+
+        int[] keyCodes = commonKeyCodes();
+        String[] labels = commonKeyLabels(keyCodes);
+        Spinner spinner = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(24), dp(12), dp(24), 0);
+        content.addView(spinner);
+
+        TextView sizeLabel = new TextView(this);
+        final int[] sizeDp = new int[] { 46 };
+        sizeLabel.setText("\u6309\u952e\u5927\u5c0f\uff1a" + sizeDp[0] + "dp");
+        SeekBar sizeSeek = new SeekBar(this);
+        sizeSeek.setMax(68);
+        sizeSeek.setProgress(sizeDp[0] - 28);
+        sizeSeek.setOnSeekBarChangeListener(new SimpleSeekListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (!fromUser) {
+                    return;
+                }
+                sizeDp[0] = progress + 28;
+                sizeLabel.setText("\u6309\u952e\u5927\u5c0f\uff1a" + sizeDp[0] + "dp");
+            }
+        });
+        content.addView(sizeLabel);
+        content.addView(sizeSeek);
+
+        new AlertDialog.Builder(this)
+                .setTitle("\u6dfb\u52a0\u81ea\u5b9a\u4e49\u6309\u952e")
+                .setView(content)
+                .setPositiveButton("\u6dfb\u52a0", (dialog, which) -> {
+                    int index = spinner.getSelectedItemPosition();
+                    int keyCode = keyCodes[Math.max(0, index)];
+                    String label = keyLabel(keyCode);
+                    mGamepad.addCustomButton(label, keyCode, sizeDp[0]);
+                    mGamepadLayoutEditing = true;
+                    mGamepad.setLayoutEditMode(true);
+                    mGamepadConfig.layout = mGamepad.exportLayout();
+                    Toast.makeText(this, "\u5df2\u6dfb\u52a0\uff0c\u62d6\u52a8\u5230\u4f4d\u7f6e\u540e\u8bf7\u4fdd\u5b58\u5e03\u5c40", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("\u53d6\u6d88", null)
+                .show();
+    }
+
     private void saveGamepadLayout() {
         String layout = mGamepad.exportLayout();
+        mGamepadConfig.layout = layout;
         MkxpLauncher.INSTANCE.saveGamepadLayout(this, layout);
+        mGamepadLayoutEditing = false;
+        mGamepad.setLayoutEditMode(false);
         Toast.makeText(this, "\u6309\u952e\u5e03\u5c40\u5df2\u4fdd\u5b58", Toast.LENGTH_SHORT).show();
+    }
+
+    private boolean ensureGamepadReady() {
+        if (!VIRTUAL_GAMEPAD) {
+            Toast.makeText(this, "\u865a\u62df\u6309\u952e\u672a\u542f\u7528", Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        installGamepad();
+        if (!mGamepadAttached) {
+            return false;
+        }
+        if (mGamepadInvisible) {
+            mGamepad.showView();
+            mGamepadInvisible = false;
+        }
+        return true;
+    }
+
+    private void reinstallGamepad() {
+        boolean wasAttached = mGamepadAttached;
+        mGamepad.detach();
+        mGamepadAttached = false;
+        if (wasAttached || VIRTUAL_GAMEPAD) {
+            installGamepad();
+        }
+        bringGameOverlaysToFront();
+    }
+
+    private ScrollView wrapInScrollView(View content) {
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.addView(content);
+        return scrollView;
     }
 
     private void bringGameOverlaysToFront() {
@@ -316,6 +511,45 @@ public class SdlGameActivity extends SDLActivity {
             mPlayerOptionsButton.bringToFront();
             mPlayerOptionsButton.invalidate();
         }
+    }
+
+    private GamepadConfig copyGamepadConfig(GamepadConfig source) {
+        GamepadConfig config = new GamepadConfig();
+        config.opacity = source.opacity;
+        config.scale = source.scale;
+        config.diagonalMovement = source.diagonalMovement;
+        config.joystickMode = source.joystickMode;
+        config.layout = source.layout;
+        config.keycodeA = source.keycodeA;
+        config.keycodeB = source.keycodeB;
+        config.keycodeC = source.keycodeC;
+        config.keycodeX = source.keycodeX;
+        config.keycodeY = source.keycodeY;
+        config.keycodeZ = source.keycodeZ;
+        config.keycodeL = source.keycodeL;
+        config.keycodeR = source.keycodeR;
+        config.keycodeCTRL = source.keycodeCTRL;
+        config.keycodeALT = source.keycodeALT;
+        config.keycodeSHIFT = source.keycodeSHIFT;
+        return config;
+    }
+
+    private void applyConfigFields(GamepadConfig target, GamepadConfig source) {
+        target.opacity = source.opacity;
+        target.scale = source.scale;
+        target.diagonalMovement = source.diagonalMovement;
+        target.joystickMode = source.joystickMode;
+        target.keycodeA = source.keycodeA;
+        target.keycodeB = source.keycodeB;
+        target.keycodeC = source.keycodeC;
+        target.keycodeX = source.keycodeX;
+        target.keycodeY = source.keycodeY;
+        target.keycodeZ = source.keycodeZ;
+        target.keycodeL = source.keycodeL;
+        target.keycodeR = source.keycodeR;
+        target.keycodeCTRL = source.keycodeCTRL;
+        target.keycodeALT = source.keycodeALT;
+        target.keycodeSHIFT = source.keycodeSHIFT;
     }
 
     private GamepadConfig readGamepadConfigFromIntent() {
@@ -341,6 +575,59 @@ public class SdlGameActivity extends SDLActivity {
     private String stringExtra(String name) {
         String value = getIntent().getStringExtra(name);
         return value == null ? "" : value;
+    }
+
+    private int clamp(Integer value, int min, int max) {
+        int safeValue = value == null ? min : value;
+        return Math.max(min, Math.min(max, safeValue));
+    }
+
+    private String keyLabel(int keyCode) {
+        return KeyEvent.keyCodeToString(keyCode)
+                .replace("KEYCODE_", "")
+                .replace("_LEFT", "")
+                .replace("_RIGHT", "");
+    }
+
+    private String[] commonKeyLabels(int[] keyCodes) {
+        String[] labels = new String[keyCodes.length];
+        for (int i = 0; i < keyCodes.length; i++) {
+            labels[i] = keyLabel(keyCodes[i]);
+        }
+        return labels;
+    }
+
+    private int[] commonKeyCodes() {
+        return new int[] {
+                KeyEvent.KEYCODE_Z,
+                KeyEvent.KEYCODE_X,
+                KeyEvent.KEYCODE_C,
+                KeyEvent.KEYCODE_A,
+                KeyEvent.KEYCODE_S,
+                KeyEvent.KEYCODE_D,
+                KeyEvent.KEYCODE_Q,
+                KeyEvent.KEYCODE_W,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_SPACE,
+                KeyEvent.KEYCODE_ESCAPE,
+                KeyEvent.KEYCODE_MENU,
+                KeyEvent.KEYCODE_CTRL_LEFT,
+                KeyEvent.KEYCODE_ALT_LEFT,
+                KeyEvent.KEYCODE_SHIFT_LEFT,
+                KeyEvent.KEYCODE_PAGE_UP,
+                KeyEvent.KEYCODE_PAGE_DOWN,
+                KeyEvent.KEYCODE_TAB
+        };
+    }
+
+    private abstract static class SimpleSeekListener implements SeekBar.OnSeekBarChangeListener {
+        @Override
+        public void onStartTrackingTouch(SeekBar seekBar) {
+        }
+
+        @Override
+        public void onStopTrackingTouch(SeekBar seekBar) {
+        }
     }
 
     private static String prepareReferenceGamePath(String configPath, String gamePath) {

@@ -538,22 +538,14 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             return;
         }
 
-        // HACK: Prevent mkxp-z threads deadlock on message boxes/out of focus on older Android devices
-        // (I don't know why when it sets native focus state, it also fires SDL_APP_WILLENTERBACKGROUND event,
-        // causing threads deadlock (and following ANR), so it still requires to investigate.)
+        mHasFocus = hasFocus;
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            mHasFocus = hasFocus;
             if (hasFocus) {
                 mNextNativeState = NativeState.RESUMED;
                 SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
                 SDLActivity.handleNativeState();
                 nativeFocusChanged(true);
-            } else {
-                nativeFocusChanged(false);
-                if (!mHasMultiWindow) {
-                    mNextNativeState = NativeState.PAUSED;
-                    SDLActivity.handleNativeState();
-                }
             }
         }
     }
@@ -707,7 +699,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         // Try a transition to resumed state
         if (mNextNativeState == NativeState.RESUMED) {
-            if (mSurface.mIsSurfaceReady && mHasFocus && mIsResumedCalled) {
+            if (mSurface != null && mSurface.mIsSurfaceReady && mHasFocus && mIsResumedCalled) {
                 if (mSDLThread == null) {
                     // This is the entry point to the C app.
                     // Start up the C app thread and enable sensor input for the first time

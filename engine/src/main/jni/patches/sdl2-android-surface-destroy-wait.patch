@@ -1,0 +1,11 @@
+--- SDL2/src/core/android/SDL_android.c
++++ SDL2/src/core/android/SDL_android.c
+@@ -1039,7 +1039,7 @@ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceChanged)(JNIEnv *env, j
+ /* Called from surfaceDestroyed() */
+ JNIEXPORT void JNICALL SDL_JAVA_INTERFACE(onNativeSurfaceDestroyed)(JNIEnv *env, jclass jcls)
+ {
+-    int nb_attempt = 50;
++    int nb_attempt = 250;
+ 
+ retry:
+ 

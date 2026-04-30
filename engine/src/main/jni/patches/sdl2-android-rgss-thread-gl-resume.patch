@@ -1,0 +1,32 @@
+--- SDL2/src/video/android/SDL_androidevents.c
++++ SDL2/src/video/android/SDL_androidevents.c
+@@ -74,6 +74,10 @@ android_egl_context_restore(SDL_Window *window)
+     if (window) {
+         SDL_Event event;
+         SDL_WindowData *data = (SDL_WindowData *) window->driverdata;
++        if (!data->egl_context) {
++            data->backup_done = 0;
++            return;
++        }
+         if (SDL_GL_MakeCurrent(window, (SDL_GLContext) data->egl_context) < 0) {
+             /* The context is no longer valid, create a new one */
+             data->egl_context = (EGLContext) SDL_GL_CreateContext(window);
+@@ -91,10 +95,16 @@ android_egl_context_backup(SDL_Window *window)
+ {
+     if (window) {
+         /* Keep a copy of the EGL Context so we can try to restore it when we resume */
++        SDL_GLContext current_context;
+         SDL_WindowData *data = (SDL_WindowData *) window->driverdata;
+-        data->egl_context = SDL_GL_GetCurrentContext();
++        current_context = SDL_GL_GetCurrentContext();
++        if (current_context) {
++            data->egl_context = current_context;
++        }
+         /* We need to do this so the EGLSurface can be freed */
+-        SDL_GL_MakeCurrent(window, NULL);
++        if (current_context) {
++            SDL_GL_MakeCurrent(window, NULL);
++        }
+         data->backup_done = 1;
+     }
+}

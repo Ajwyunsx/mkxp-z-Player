@@ -15,6 +15,9 @@ public class GamepadConfig
     // Whether use diagonal (8-way) movement on D-Pad (default: false)
     public Boolean diagonalMovement = false;
 
+    // Whether use a drawn joystick instead of the classic D-Pad (default: false)
+    public Boolean joystickMode = false;
+
     // Saved draggable layout, stored as percentage-based positions.
     public String layout = "";
 

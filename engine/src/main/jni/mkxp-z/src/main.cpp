@@ -221,6 +221,8 @@ int main(int argc, char *argv[])
 	SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "0");
 
 #ifdef MKXPZ_BUILD_ANDROID
+	SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
+	SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO, "0");
 	// Set application window orientation to landscape
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif

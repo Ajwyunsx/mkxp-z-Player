@@ -26,6 +26,22 @@
         app:fgDrawable="@drawable/gamepad_dpad_front"
     />
 
+    <com.hatkid.mkxpz.gamepad.GamepadJoystick
+        android:id="@+id/joystick"
+        android:layout_width="@dimen/_110sdp"
+        android:layout_height="@dimen/_110sdp"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentBottom="true"
+        android:layout_centerInParent="true"
+        android:layout_marginStart="@dimen/_10sdp"
+        android:layout_marginTop="@dimen/_10sdp"
+        android:layout_marginEnd="@dimen/_10sdp"
+        android:layout_marginBottom="@dimen/_10sdp"
+        android:clickable="true"
+        android:focusable="false"
+        android:visibility="gone"
+    />
+
     <RelativeLayout
         android:id="@+id/buttons_misc_left_layout"
         android:layout_width="@dimen/_42sdp"
