@@ -7,10 +7,12 @@ import androidx.lifecycle.viewModelScope
 import io.github.mkxpz.rpgplayer.data.AppContainer
 import io.github.mkxpz.rpgplayer.data.GameEntry
 import io.github.mkxpz.rpgplayer.data.LauncherSettings
+import io.github.mkxpz.rpgplayer.data.PhysicalGamepadButton
 import io.github.mkxpz.rpgplayer.data.PreferredImportMode
 import io.github.mkxpz.rpgplayer.data.ThemeColorSource
 import io.github.mkxpz.rpgplayer.data.ThemeModeSetting
 import io.github.mkxpz.rpgplayer.data.VirtualGamepadButton
+import io.github.mkxpz.rpgplayer.domain.StandaloneApkOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -46,6 +48,16 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         initialValue = MainUiState(),
     )
 
+    init {
+        viewModelScope.launch {
+            runBusy("正在准备直装游戏...") {
+                container.importService.installBundledGameIfPresent()?.let { entry ->
+                    container.launchController.launch(entry)
+                }
+            }
+        }
+    }
+
     fun importGameTree(uri: Uri) {
         viewModelScope.launch {
             runBusy("正在复制游戏...") {
@@ -60,6 +72,46 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             runBusy("正在校验路径...") {
                 val entry = container.importService.addDirectPath(path)
                 userMessage.value = "已添加 ${entry.title}"
+            }
+        }
+    }
+
+    fun importVxRtpTree(uri: Uri) {
+        viewModelScope.launch {
+            runBusy("正在导入 VX RTP...") {
+                val path = container.importService.importVxRtpTree(uri)
+                container.settingsRepository.setVxRtpPath(path)
+                userMessage.value = "VX RTP 已导入"
+            }
+        }
+    }
+
+    fun importVxAceRtpTree(uri: Uri) {
+        viewModelScope.launch {
+            runBusy("正在导入 VX Ace RTP...") {
+                val path = container.importService.importVxAceRtpTree(uri)
+                container.settingsRepository.setVxAceRtpPath(path)
+                userMessage.value = "VX Ace RTP 已导入"
+            }
+        }
+    }
+
+    fun downloadVxRtp() {
+        viewModelScope.launch {
+            runBusy("正在下载并安装 VX RTP...") {
+                val path = container.importService.downloadVxRtp()
+                container.settingsRepository.setVxRtpPath(path)
+                userMessage.value = "VX RTP 已自动安装"
+            }
+        }
+    }
+
+    fun downloadVxAceRtp() {
+        viewModelScope.launch {
+            runBusy("正在下载并安装 VX Ace RTP...") {
+                val path = container.importService.downloadVxAceRtp()
+                container.settingsRepository.setVxAceRtpPath(path)
+                userMessage.value = "VX Ace RTP 已自动安装"
             }
         }
     }
@@ -81,6 +133,29 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun updateGameMetadata(entry: GameEntry, title: String, iconUri: Uri?, clearIcon: Boolean) {
+        viewModelScope.launch {
+            runBusy("正在保存游戏信息...") {
+                val updated = container.gameRepository.updateMetadata(entry, title, iconUri, clearIcon)
+                userMessage.value = "已更新 ${updated.title}"
+            }
+        }
+    }
+
+    fun exportStandaloneApk(entry: GameEntry, options: StandaloneApkOptions) {
+        viewModelScope.launch {
+            runBusy("正在打包直装 APK...") {
+                val apk = container.importService.exportStandaloneApk(entry, options)
+                userMessage.value = "已导出 ${apk.name}"
+                runCatching {
+                    container.importService.installStandaloneApk(apk)
+                }.onFailure { error ->
+                    userMessage.value = error.message ?: "APK 已导出，请手动安装"
+                }
+            }
+        }
+    }
+
     fun consumeUserMessage() {
         userMessage.value = null
     }
@@ -95,10 +170,18 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
     fun setVirtualGamepadDiagonalMovement(value: Boolean) = updateSetting { setVirtualGamepadDiagonalMovement(value) }
     fun setVirtualGamepadKey(button: VirtualGamepadButton, keyCode: Int) =
         updateSetting { setVirtualGamepadKey(button, keyCode) }
+    fun setPhysicalGamepadMappingEnabled(value: Boolean) = updateSetting { setPhysicalGamepadMappingEnabled(value) }
+    fun setPhysicalGamepadBackAsB(value: Boolean) = updateSetting { setPhysicalGamepadBackAsB(value) }
+    fun setPhysicalGamepadKey(button: PhysicalGamepadButton, keyCode: Int) =
+        updateSetting { setPhysicalGamepadKey(button, keyCode) }
     fun setFixedFramerate(value: Int) = updateSetting { setFixedFramerate(value) }
     fun setSmoothScaling(value: Boolean) = updateSetting { setSmoothScaling(value) }
     fun setKeepAspectRatio(value: Boolean) = updateSetting { setKeepAspectRatio(value) }
     fun setSoundFontPath(value: String) = updateSetting { setSoundFontPath(value) }
+    fun setVxRtpPath(value: String) = updateSetting { setVxRtpPath(value) }
+    fun setVxAceRtpPath(value: String) = updateSetting { setVxAceRtpPath(value) }
+    fun setRubyClassicCompatibilityEnabled(value: Boolean) = updateSetting { setRubyClassicCompatibilityEnabled(value) }
+    fun setWinApiCompatibilityEnabled(value: Boolean) = updateSetting { setWinApiCompatibilityEnabled(value) }
     fun setDebugLaunch(value: Boolean) = updateSetting { setDebugLaunch(value) }
 
     private fun updateSetting(block: suspend io.github.mkxpz.rpgplayer.data.SettingsRepository.() -> Unit) {

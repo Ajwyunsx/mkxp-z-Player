@@ -21,6 +21,7 @@ public class Gamepad
 {
     private GamepadConfig mGamepadConfig = null;
     private boolean mInvisible = false;
+    private int mLastPhysicalDPadKey = 0;
 
     private OnKeyDownListener mOnKeyDownListener = key -> {};
     private OnKeyUpListener mOnKeyUpListener = key -> {};
@@ -40,7 +41,7 @@ public class Gamepad
         final GamepadButton view;
         final String label;
         final int keyCode;
-        final int sizeDp;
+        int sizeDp;
 
         CustomButton(GamepadButton view, String label, int keyCode, int sizeDp)
         {
@@ -83,6 +84,7 @@ public class Gamepad
     private GamepadButton gpadBtnCTRL;
     private GamepadButton gpadBtnALT;
     private GamepadButton gpadBtnSHIFT;
+    private GamepadButton gpadBtnRUN;
 
     public void init(GamepadConfig gpadConfig, boolean invisible)
     {
@@ -118,6 +120,7 @@ public class Gamepad
         gpadBtnCTRL = layout.findViewById(R.id.button_CTRL);
         gpadBtnALT = layout.findViewById(R.id.button_ALT);
         gpadBtnSHIFT = layout.findViewById(R.id.button_SHIFT);
+        gpadBtnRUN = layout.findViewById(R.id.button_RUN);
 
         mGamepadLayout.setOnTouchListener((view, motionEvent) -> false);
         gpadDPad.setOnKeyDownListener(key -> mOnKeyDownListener.onKeyDown(key));
@@ -131,17 +134,18 @@ public class Gamepad
         initGamepadButtons();
         applySavedSettings(mGamepadConfig.layout);
 
-        ViewUtils.resize(mGamepadLayout, safeInt(mGamepadConfig.scale, 100, 60, 160));
         applyOpacity();
         mGamepadLayout.post(() -> {
             applyLayout(mGamepadConfig.layout);
             applyInputMode();
+            updateFixedGroupSizes();
             setLayoutEditMode(mLayoutEditMode);
         });
     }
 
     public void detach()
     {
+        releaseLastPhysicalDPadKey();
         clearCustomButtons();
         if (mGamepadLayout != null && mGamepadLayout.getParent() instanceof ViewGroup) {
             ((ViewGroup) mGamepadLayout.getParent()).removeView(mGamepadLayout);
@@ -165,6 +169,7 @@ public class Gamepad
         gpadBtnCTRL = null;
         gpadBtnALT = null;
         gpadBtnSHIFT = null;
+        gpadBtnRUN = null;
     }
 
     public void setLayoutEditMode(boolean enabled)
@@ -217,6 +222,99 @@ public class Gamepad
             mGamepadConfig.scale = Math.max(60, Math.min(160, scale));
     }
 
+    public String[] getControlSizeIds()
+    {
+        ArrayList<String> ids = new ArrayList<>();
+        ids.add("dpad");
+        ids.add("joystick");
+        ids.add("A");
+        ids.add("B");
+        ids.add("C");
+        ids.add("X");
+        ids.add("Y");
+        ids.add("Z");
+        ids.add("L");
+        ids.add("R");
+        ids.add("CTRL");
+        ids.add("ALT");
+        ids.add("SHIFT");
+        ids.add("RUN");
+        for (int i = 0; i < mCustomButtons.size(); i++)
+            ids.add("custom" + i);
+        return ids.toArray(new String[0]);
+    }
+
+    public String getControlLabel(String id)
+    {
+        if ("dpad".equals(id))
+            return "十字键";
+        if ("joystick".equals(id))
+            return "摇杆";
+        if (id != null && id.startsWith("custom")) {
+            CustomButton button = customButtonById(id);
+            return button != null ? "自定义 " + button.label : "自定义按键";
+        }
+        return id == null ? "按键" : id;
+    }
+
+    public int getMinControlSizeDp(String id)
+    {
+        return ("dpad".equals(id) || "joystick".equals(id)) ? 72 : 24;
+    }
+
+    public int getMaxControlSizeDp(String id)
+    {
+        return ("dpad".equals(id) || "joystick".equals(id)) ? 180 : 120;
+    }
+
+    public int getControlSizeDp(String id)
+    {
+        CustomButton customButton = customButtonById(id);
+        if (customButton != null)
+            return customButton.sizeDp;
+
+        View target = controlSizeTarget(id);
+        if (target == null)
+            return defaultControlSizeDp(id);
+
+        int width = target.getLayoutParams() != null && target.getLayoutParams().width > 0
+            ? target.getLayoutParams().width
+            : target.getWidth();
+        if (width <= 0)
+            return defaultControlSizeDp(id);
+        return pxToDp(width);
+    }
+
+    public void setControlSizeDp(String id, int sizeDp)
+    {
+        int clampedSize = Math.max(getMinControlSizeDp(id), Math.min(getMaxControlSizeDp(id), sizeDp));
+        CustomButton customButton = customButtonById(id);
+        View target = customButton != null ? customButton.view : controlSizeTarget(id);
+        if (target == null || mGamepadLayout == null)
+            return;
+
+        int x = Math.round(target.getX());
+        int y = Math.round(target.getY());
+        int width = dp(clampedSize);
+        int height = isModifierButton(id) ? dp(Math.max(18, Math.round(clampedSize * 0.5f))) : width;
+
+        ViewGroup.LayoutParams params = target.getLayoutParams();
+        params.width = width;
+        params.height = height;
+        target.setLayoutParams(params);
+
+        if (customButton != null)
+            customButton.sizeDp = clampedSize;
+
+        target.post(() -> {
+            if (isStandaloneControl(id))
+                moveTargetTo(target, x, y);
+            updateFixedGroupSizes();
+            applyOpacity();
+            target.invalidate();
+        });
+    }
+
     public void addCustomButton(String label, int keyCode)
     {
         addCustomButton(label, keyCode, 46);
@@ -243,12 +341,23 @@ public class Gamepad
         layout.append("opacity=")
             .append(safeInt(mGamepadConfig.opacity, 30, 5, 100))
             .append(";");
-        layout.append("scale=")
-            .append(safeInt(mGamepadConfig.scale, 100, 60, 160))
-            .append(";");
         layout.append("mode=")
             .append(Boolean.TRUE.equals(mGamepadConfig.joystickMode) ? "joystick" : "dpad")
             .append(";");
+        layout.append(encodeSizeItem("dpad", gpadDPad));
+        layout.append(encodeSizeItem("joystick", gpadJoystick));
+        layout.append(encodeSizeItem("A", gpadBtnA));
+        layout.append(encodeSizeItem("B", gpadBtnB));
+        layout.append(encodeSizeItem("C", gpadBtnC));
+        layout.append(encodeSizeItem("X", gpadBtnX));
+        layout.append(encodeSizeItem("Y", gpadBtnY));
+        layout.append(encodeSizeItem("Z", gpadBtnZ));
+        layout.append(encodeSizeItem("L", gpadBtnL));
+        layout.append(encodeSizeItem("R", gpadBtnR));
+        layout.append(encodeSizeItem("CTRL", gpadBtnCTRL));
+        layout.append(encodeSizeItem("ALT", gpadBtnALT));
+        layout.append(encodeSizeItem("SHIFT", gpadBtnSHIFT));
+        layout.append(encodeSizeItem("RUN", gpadBtnRUN));
         layout.append(encodeLayoutItem("dpad", gpadDPad));
         layout.append(encodeLayoutItem("joystick", gpadJoystick));
         layout.append(encodeLayoutItem("action", gpadActionLayout));
@@ -264,6 +373,13 @@ public class Gamepad
         if (mGamepadConfig != null)
             mGamepadConfig.layout = result;
         return result;
+    }
+
+    private String encodeSizeItem(String name, View view)
+    {
+        if (view == null)
+            return "";
+        return "size_" + name + "=" + getControlSizeDp(name) + ";";
     }
 
     private String encodeLayoutItem(String name, View view)
@@ -316,6 +432,10 @@ public class Gamepad
                 mGamepadConfig.scale = safeParsedInt(value, 100, 60, 160);
                 continue;
             }
+            if (name.startsWith("size_")) {
+                applySizeItem(name.substring("size_".length()), value);
+                continue;
+            }
 
             if (name.startsWith("custom")) {
                 applyCustomButton(value);
@@ -345,6 +465,15 @@ public class Gamepad
         }
         applyInputMode();
         applyOpacity();
+        updateFixedGroupSizes();
+    }
+
+    private void applySizeItem(String id, String value)
+    {
+        try {
+            setControlSizeDp(id, Integer.parseInt(value));
+        } catch (NumberFormatException ignored) {
+        }
     }
 
     private void applyCustomButton(String value)
@@ -383,6 +512,76 @@ public class Gamepad
             default:
                 return null;
         }
+    }
+
+    private View controlSizeTarget(String id)
+    {
+        if (id == null)
+            return null;
+        switch (id) {
+            case "dpad":
+                return gpadDPad;
+            case "joystick":
+                return gpadJoystick;
+            case "A":
+                return gpadBtnA;
+            case "B":
+                return gpadBtnB;
+            case "C":
+                return gpadBtnC;
+            case "X":
+                return gpadBtnX;
+            case "Y":
+                return gpadBtnY;
+            case "Z":
+                return gpadBtnZ;
+            case "L":
+                return gpadBtnL;
+            case "R":
+                return gpadBtnR;
+            case "CTRL":
+                return gpadBtnCTRL;
+            case "ALT":
+                return gpadBtnALT;
+            case "SHIFT":
+                return gpadBtnSHIFT;
+            case "RUN":
+                return gpadBtnRUN;
+            default:
+                return null;
+        }
+    }
+
+    private CustomButton customButtonById(String id)
+    {
+        if (id == null || !id.startsWith("custom"))
+            return null;
+        try {
+            int index = Integer.parseInt(id.substring("custom".length()));
+            if (index >= 0 && index < mCustomButtons.size())
+                return mCustomButtons.get(index);
+        } catch (NumberFormatException ignored) {
+        }
+        return null;
+    }
+
+    private boolean isStandaloneControl(String id)
+    {
+        return "dpad".equals(id) || "joystick".equals(id) || (id != null && id.startsWith("custom"));
+    }
+
+    private boolean isModifierButton(String id)
+    {
+        return "CTRL".equals(id) || "ALT".equals(id) || "SHIFT".equals(id) || "RUN".equals(id);
+    }
+
+    private int defaultControlSizeDp(String id)
+    {
+        if ("dpad".equals(id) || "joystick".equals(id))
+            return 110;
+        if (isModifierButton(id))
+            return 40;
+        return 38;
     }
 
     private void moveTargetToPercent(View target, int xPercent, int yPercent)
@@ -477,14 +676,76 @@ public class Gamepad
         });
     }
 
+    private void updateFixedGroupSizes()
+    {
+        if (mGamepadLayout == null)
+            return;
+
+        resizeGroupTo(gpadMiscLeftLayout, controlWidth(gpadBtnL) + dp(4), controlHeight(gpadBtnL) + dp(4));
+        resizeGroupTo(gpadMiscRightLayout, controlWidth(gpadBtnR) + dp(4), controlHeight(gpadBtnR) + dp(4));
+
+        int actionRow1Width = controlWidth(gpadBtnX) + controlWidth(gpadBtnY) + controlWidth(gpadBtnZ) + dp(12);
+        int actionRow2Width = controlWidth(gpadBtnA) + controlWidth(gpadBtnB) + controlWidth(gpadBtnC) + dp(12);
+        int actionRow1Height = Math.max(controlHeight(gpadBtnX), Math.max(controlHeight(gpadBtnY), controlHeight(gpadBtnZ)));
+        int actionRow2Height = Math.max(controlHeight(gpadBtnA), Math.max(controlHeight(gpadBtnB), controlHeight(gpadBtnC)));
+        resizeGroupTo(gpadActionLayout, Math.max(actionRow1Width, actionRow2Width), actionRow1Height + actionRow2Height + dp(10));
+
+        int modWidth = controlWidth(gpadBtnCTRL) + controlWidth(gpadBtnALT) + controlWidth(gpadBtnSHIFT) + controlWidth(gpadBtnRUN) + dp(32);
+        int modHeight = Math.max(
+            Math.max(controlHeight(gpadBtnCTRL), controlHeight(gpadBtnALT)),
+            Math.max(controlHeight(gpadBtnSHIFT), controlHeight(gpadBtnRUN))
+        ) + dp(4);
+        resizeGroupTo(gpadModLayout, modWidth, modHeight);
+    }
+
+    private int controlWidth(View view)
+    {
+        if (view == null)
+            return 0;
+        if (view.getLayoutParams() != null && view.getLayoutParams().width > 0)
+            return view.getLayoutParams().width;
+        return Math.max(0, view.getWidth());
+    }
+
+    private int controlHeight(View view)
+    {
+        if (view == null)
+            return 0;
+        if (view.getLayoutParams() != null && view.getLayoutParams().height > 0)
+            return view.getLayoutParams().height;
+        return Math.max(0, view.getHeight());
+    }
+
+    private void resizeGroupTo(View group, int width, int height)
+    {
+        if (group == null || group.getLayoutParams() == null)
+            return;
+
+        int x = Math.round(group.getX());
+        int y = Math.round(group.getY());
+        ViewGroup.LayoutParams params = group.getLayoutParams();
+        params.width = Math.max(1, width);
+        params.height = Math.max(1, height);
+        group.setLayoutParams(params);
+        group.post(() -> moveTargetTo(group, x, y));
+    }
+
     private void setGamepadButtonKey(GamepadButton gpadBtn, Integer keycode)
     {
+        setGamepadButtonKey(gpadBtn, keycode, null);
+    }
+
+    private void setGamepadButtonKey(GamepadButton gpadBtn, Integer keycode, String fixedLabel)
+    {
+        if (gpadBtn == null)
+            return;
+
         String btnLabel = KeyEvent.keyCodeToString(keycode)
             .replace("KEYCODE_", "")
             .replace("_LEFT", "")
             .replace("_RIGHT", "");
 
-        gpadBtn.setForegroundText(btnLabel);
+        gpadBtn.setForegroundText(fixedLabel == null ? btnLabel : fixedLabel);
         gpadBtn.setKey(keycode);
         gpadBtn.setOnKeyDownListener(key -> mOnKeyDownListener.onKeyDown(key));
         gpadBtn.setOnKeyUpListener(key -> mOnKeyUpListener.onKeyUp(key));
@@ -493,7 +754,7 @@ public class Gamepad
     private GamepadButton createCustomButton(String label, int keyCode, int sizeDp)
     {
         GamepadButton button = new GamepadButton(mGamepadLayout.getContext());
-        int clampedSizeDp = Math.max(28, Math.min(96, sizeDp));
+        int clampedSizeDp = Math.max(24, Math.min(120, sizeDp));
         int sizePx = dp(clampedSizeDp);
         RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(sizePx, sizePx);
         button.setLayoutParams(params);
@@ -596,6 +857,13 @@ public class Gamepad
         return Math.round(value * mGamepadLayout.getResources().getDisplayMetrics().density);
     }
 
+    private int pxToDp(int value)
+    {
+        if (mGamepadLayout == null)
+            return value;
+        return Math.round(value / mGamepadLayout.getResources().getDisplayMetrics().density);
+    }
+
     public void showView()
     {
         if (mGamepadLayout != null) {
@@ -643,24 +911,20 @@ public class Gamepad
         setGamepadButtonKey(gpadBtnCTRL, mGamepadConfig.keycodeCTRL);
         setGamepadButtonKey(gpadBtnALT, mGamepadConfig.keycodeALT);
         setGamepadButtonKey(gpadBtnSHIFT, mGamepadConfig.keycodeSHIFT);
+        setGamepadButtonKey(gpadBtnRUN, mGamepadConfig.keycodeRUN, "RUN");
     }
 
     public boolean processGamepadEvent(KeyEvent evt)
     {
-        InputDevice device = evt.getDevice();
-
-        if (device == null)
+        if (mGamepadConfig == null || !Boolean.TRUE.equals(mGamepadConfig.physicalMappingEnabled))
             return false;
 
-        int sources = device.getSources();
-
-        if (
-            ((sources & InputDevice.SOURCE_GAMEPAD) != InputDevice.SOURCE_GAMEPAD) &&
-            ((sources & InputDevice.SOURCE_DPAD) != InputDevice.SOURCE_DPAD)
-        )
+        if (!isPhysicalGamepadEvent(evt))
             return false;
 
-        int keycode = evt.getKeyCode();
+        int keycode = mapPhysicalGamepadKey(evt.getKeyCode());
+        if (keycode == 0)
+            return false;
 
         switch (evt.getAction())
         {
@@ -677,8 +941,96 @@ public class Gamepad
         return true;
     }
 
+    public boolean isPhysicalGamepadBackEvent(KeyEvent evt)
+    {
+        return evt != null && evt.getKeyCode() == KeyEvent.KEYCODE_BACK && isPhysicalGamepadEvent(evt);
+    }
+
+    private boolean isPhysicalGamepadEvent(KeyEvent evt)
+    {
+        InputDevice device = evt.getDevice();
+
+        if (device == null)
+            return false;
+
+        int sources = device.getSources();
+
+        if (
+            ((sources & InputDevice.SOURCE_GAMEPAD) != InputDevice.SOURCE_GAMEPAD) &&
+            ((sources & InputDevice.SOURCE_DPAD) != InputDevice.SOURCE_DPAD) &&
+            ((sources & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK)
+        )
+            return false;
+
+        return true;
+    }
+
+    private int mapPhysicalGamepadKey(int keycode)
+    {
+        switch (keycode)
+        {
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeA, KeyEvent.KEYCODE_Z);
+
+            case KeyEvent.KEYCODE_BUTTON_B:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeB, KeyEvent.KEYCODE_X);
+
+            case KeyEvent.KEYCODE_BUTTON_X:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeX, KeyEvent.KEYCODE_A);
+
+            case KeyEvent.KEYCODE_BUTTON_Y:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeY, KeyEvent.KEYCODE_S);
+
+            case KeyEvent.KEYCODE_BUTTON_L1:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeL1, KeyEvent.KEYCODE_Q);
+
+            case KeyEvent.KEYCODE_BUTTON_R1:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeR1, KeyEvent.KEYCODE_W);
+
+            case KeyEvent.KEYCODE_BUTTON_L2:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeL2, KeyEvent.KEYCODE_PAGE_UP);
+
+            case KeyEvent.KEYCODE_BUTTON_R2:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeR2, KeyEvent.KEYCODE_PAGE_DOWN);
+
+            case KeyEvent.KEYCODE_BUTTON_START:
+            case KeyEvent.KEYCODE_MENU:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeStart, KeyEvent.KEYCODE_ENTER);
+
+            case KeyEvent.KEYCODE_BUTTON_SELECT:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeSelect, KeyEvent.KEYCODE_ESCAPE);
+
+            case KeyEvent.KEYCODE_BUTTON_THUMBL:
+            case KeyEvent.KEYCODE_BUTTON_THUMBR:
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeRun, KeyEvent.KEYCODE_SHIFT_LEFT);
+
+            case KeyEvent.KEYCODE_BACK:
+                if (Boolean.TRUE.equals(mGamepadConfig.physicalBackAsB))
+                    return safePhysicalKey(mGamepadConfig.physicalKeycodeB, KeyEvent.KEYCODE_X);
+                return safePhysicalKey(mGamepadConfig.physicalKeycodeSelect, KeyEvent.KEYCODE_ESCAPE);
+
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return keycode;
+
+            default:
+                return 0;
+        }
+    }
+
+    private int safePhysicalKey(Integer keycode, int fallback)
+    {
+        return keycode == null || keycode == 0 ? fallback : keycode;
+    }
+
     public boolean processDPadEvent(MotionEvent evt)
     {
+        if (mGamepadConfig == null || !Boolean.TRUE.equals(mGamepadConfig.physicalMappingEnabled))
+            return false;
+
         InputDevice device = evt.getDevice();
 
         if (device == null)
@@ -703,21 +1055,38 @@ public class Gamepad
         else if (Float.compare(xAxis, 1.0f) == 0)
             keycode = KeyEvent.KEYCODE_DPAD_RIGHT;
 
-        if (keycode == null)
-            return false;
-
         switch (evt.getAction())
         {
+            case MotionEvent.ACTION_MOVE:
             case MotionEvent.ACTION_DOWN:
-                mOnKeyDownListener.onKeyDown(keycode);
+                if (keycode == null) {
+                    return releaseLastPhysicalDPadKey();
+                }
+                if (mLastPhysicalDPadKey != keycode) {
+                    releaseLastPhysicalDPadKey();
+                    mOnKeyDownListener.onKeyDown(keycode);
+                    mLastPhysicalDPadKey = keycode;
+                }
                 break;
 
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_UP:
-                mOnKeyUpListener.onKeyUp(keycode);
-                break;
+                return releaseLastPhysicalDPadKey();
+
+            default:
+                return keycode != null;
         }
 
         return true;
+    }
+
+    private boolean releaseLastPhysicalDPadKey()
+    {
+        if (mLastPhysicalDPadKey != 0) {
+            mOnKeyUpListener.onKeyUp(mLastPhysicalDPadKey);
+            mLastPhysicalDPadKey = 0;
+            return true;
+        }
+        return false;
     }
 }

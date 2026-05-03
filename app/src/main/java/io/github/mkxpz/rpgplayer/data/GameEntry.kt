@@ -16,6 +16,8 @@ data class GameEntry(
     val addedAt: Long,
     val lastPlayedAt: Long? = null,
     val launchCount: Int = 0,
+    val customIconPath: String? = null,
+    val hasWinApiUsage: Boolean = false,
 )
 
 enum class StoredImportMode {
@@ -29,6 +31,7 @@ enum class RpgMakerEngine(val rgssVersion: Int, val displayName: String) {
     VX_ACE(3, "RPG Maker VX Ace"),
     MV(0, "RPG Maker MV"),
     MZ(0, "RPG Maker MZ"),
+    RPG_2000_2003(0, "RPG Maker 2000/2003"),
     UNKNOWN(0, "Auto detect"),
 }
 
@@ -39,3 +42,5 @@ fun RpgMakerEngine.isRgss(): Boolean = this == RpgMakerEngine.XP ||
 
 fun RpgMakerEngine.isHtml5(): Boolean = this == RpgMakerEngine.MV ||
     this == RpgMakerEngine.MZ
+
+fun RpgMakerEngine.isEasyRpg(): Boolean = this == RpgMakerEngine.RPG_2000_2003

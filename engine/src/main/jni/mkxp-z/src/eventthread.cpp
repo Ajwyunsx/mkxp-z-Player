@@ -279,21 +279,10 @@ void EventThread::process(RGSSThreadData &rtData)
 
 						windowSizeMsg.post(Vec2i(winW, winH));
 						drawableSizeMsg.post(Vec2i(drwW, drwH));
-#ifdef MKXPZ_BUILD_ANDROID
-						rtData.rqGlRebind.set();
-#endif
 
 						resetInputStates();
 
 						break;
-
-#ifdef MKXPZ_BUILD_ANDROID
-					case SDL_WINDOWEVENT_RESTORED:
-					case SDL_WINDOWEVENT_SHOWN:
-					case SDL_WINDOWEVENT_EXPOSED:
-						rtData.rqGlRebind.set();
-						break;
-#endif
 
 					case SDL_WINDOWEVENT_ENTER:
 						cursorInWindow = true;
@@ -313,9 +302,6 @@ void EventThread::process(RGSSThreadData &rtData)
 
 					case SDL_WINDOWEVENT_FOCUS_GAINED:
 						windowFocused = true;
-#ifdef MKXPZ_BUILD_ANDROID
-						rtData.rqGlRebind.set();
-#endif
 						updateCursorState(cursorInWindow && windowFocused && !sMenu, gameScreen);
 						break;
 
@@ -666,7 +652,6 @@ int EventThread::eventFilter(void *data, SDL_Event *event)
 			if (HAVE_ALC_DEVICE_PAUSE)
 				alc.DeviceResume(rtData.alcDev);
 
-			rtData.rqGlRebind.set();
 			rtData.syncPoint.resumeThreads();
 
 			return 0;
@@ -679,15 +664,15 @@ int EventThread::eventFilter(void *data, SDL_Event *event)
 			Debug() << "SDL_APP_LOWMEMORY";
 			return 0;
 
+		/*
 		case SDL_RENDER_TARGETS_RESET :
 			Debug() << "****** SDL_RENDER_TARGETS_RESET";
-			rtData.rqGlRebind.set();
 			return 0;
 
 		case SDL_RENDER_DEVICE_RESET :
 			Debug() << "****** SDL_RENDER_DEVICE_RESET";
-			rtData.rqGlRebind.set();
 			return 0;
+		*/
 	}
 
 	return 1;
@@ -895,8 +880,8 @@ bool SyncPoint::haltThreads()
 	// Lock main sync and sleep until RGSS thread reports back
 	mainSync.lock();
 #ifdef MKXPZ_BUILD_ANDROID
-	if (!reply.waitForUnlockTimeout(1800)) {
-		Debug() << "SyncPoint::haltThreads timed out on Android; keeping RGSS pause pending";
+	if (!reply.waitForUnlockTimeout(900)) {
+		Debug() << "SyncPoint::haltThreads timed out on Android; leaving pause pending";
 		reply.unlock(false);
 		return false;
 	}

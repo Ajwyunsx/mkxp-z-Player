@@ -23,15 +23,34 @@ android {
 
     ndkVersion = "25.1.8937393"
 
+    signingConfigs {
+        create("standaloneExport") {
+            storeFile = file("signing/standalone-export.p12")
+            storeType = "PKCS12"
+            storePassword = "mkxpzplayer"
+            keyAlias = "standalone"
+            keyPassword = "mkxpzplayer"
+        }
+    }
+
     defaultConfig {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17", "-Wall", "-Wextra")
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("standaloneExport")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("standaloneExport")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -60,6 +79,13 @@ android {
             useLegacyPackaging = true
         }
     }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
 }
 
 dependencies {
@@ -80,6 +106,8 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.json:json:20240303")
+    implementation("uk.co.armedpineapple.innoextract:service:2.1.0")
+    implementation("com.android.tools.build:apksig:8.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.8")
     debugImplementation("androidx.compose.ui:ui-test-manifest:1.6.8")

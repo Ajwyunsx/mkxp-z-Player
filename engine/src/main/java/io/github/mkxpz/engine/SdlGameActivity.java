@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.text.InputType;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
@@ -19,6 +20,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.ArrayAdapter;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.ScrollView;
@@ -32,6 +34,7 @@ import com.hatkid.mkxpz.gamepad.Gamepad;
 import com.hatkid.mkxpz.gamepad.GamepadConfig;
 
 import org.libsdl.app.SDLActivity;
+import org.easyrpg.player.player.EasyRpgPlayerActivity;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -45,6 +48,8 @@ public class SdlGameActivity extends SDLActivity {
     public static String GAME_PATH = "";
     public static String CONFIG_PATH = "";
     public static String REAL_GAME_PATH = "";
+    public static String GAME_ID = "";
+    public static String MODIFIER_CONFIG_PATH = "";
     public static boolean DEBUG = false;
     public static boolean VIRTUAL_GAMEPAD = true;
 
@@ -59,6 +64,7 @@ public class SdlGameActivity extends SDLActivity {
 
     private final Gamepad mGamepad = new Gamepad();
     private GamepadConfig mGamepadConfig = new GamepadConfig();
+    private ModifierConfig mModifierConfig = new ModifierConfig();
     private AlertDialog mPlayerMenuDialog;
     private TextView mPlayerOptionsButton;
 
@@ -81,10 +87,16 @@ public class SdlGameActivity extends SDLActivity {
 
         CONFIG_PATH = configPath;
         REAL_GAME_PATH = gamePath;
+        GAME_ID = stringExtra(MkxpLauncher.EXTRA_GAME_ID);
+        MODIFIER_CONFIG_PATH = stringExtra(MkxpLauncher.EXTRA_MODIFIER_CONFIG_PATH);
         GAME_PATH = prepareReferenceGamePath(configPath, gamePath);
         DEBUG = getIntent().getBooleanExtra(MkxpLauncher.EXTRA_DEBUG, false);
         VIRTUAL_GAMEPAD = getIntent().getBooleanExtra(MkxpLauncher.EXTRA_VIRTUAL_GAMEPAD, true);
         mGamepadConfig = readGamepadConfigFromIntent();
+        mModifierConfig = ModifierConfig.load(this, GAME_ID, MODIFIER_CONFIG_PATH);
+        if (!MODIFIER_CONFIG_PATH.isEmpty()) {
+            mModifierConfig.writeToFile(new File(MODIFIER_CONFIG_PATH));
+        }
 
         Log.i(TAG, "mkxp launch GAME_PATH=" + GAME_PATH + " REAL_GAME_PATH=" + REAL_GAME_PATH + " CONFIG_PATH=" + CONFIG_PATH);
 
@@ -92,6 +104,7 @@ public class SdlGameActivity extends SDLActivity {
 
         mMainHandler = new Handler(getMainLooper());
         mVibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        configureGamepadInput();
 
         if (!mBrokenLibraries) {
             installGamepad();
@@ -132,11 +145,19 @@ public class SdlGameActivity extends SDLActivity {
         }
         super.onDestroy();
 
+        android.os.Process.killProcess(android.os.Process.myPid());
         System.exit(0);
     }
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent evt) {
+        if (!mBrokenLibraries && mGamepad.processGamepadEvent(evt)) {
+            return true;
+        }
+        if (!mBrokenLibraries && mGamepad.isPhysicalGamepadBackEvent(evt)) {
+            return super.dispatchKeyEvent(evt);
+        }
+
         if (evt.getKeyCode() == KeyEvent.KEYCODE_BACK) {
             if (evt.getAction() == KeyEvent.ACTION_UP && evt.getRepeatCount() == 0) {
                 showPlayerOptions();
@@ -149,10 +170,6 @@ public class SdlGameActivity extends SDLActivity {
                 mGamepad.hideView();
                 mGamepadInvisible = true;
             }
-        }
-
-        if (VIRTUAL_GAMEPAD && mGamepad.processGamepadEvent(evt)) {
-            return true;
         }
 
         return super.dispatchKeyEvent(evt);
@@ -170,7 +187,7 @@ public class SdlGameActivity extends SDLActivity {
 
     @Override
     public boolean onGenericMotionEvent(MotionEvent evt) {
-        if (VIRTUAL_GAMEPAD && mGamepad.processDPadEvent(evt)) {
+        if (!mBrokenLibraries && mGamepad.processDPadEvent(evt)) {
             return true;
         }
 
@@ -188,13 +205,17 @@ public class SdlGameActivity extends SDLActivity {
         }
 
         mGamepadInvisible = isAndroidTV() || isChromebook();
-        mGamepad.init(mGamepadConfig, mGamepadInvisible);
-        mGamepad.setOnKeyDownListener(SDLActivity::onNativeKeyDown);
-        mGamepad.setOnKeyUpListener(SDLActivity::onNativeKeyUp);
+        configureGamepadInput();
         mGamepad.attachTo(this, mLayout);
         mGamepad.setLayoutEditMode(mGamepadLayoutEditing);
         mGamepad.bringToFront();
         mGamepadAttached = true;
+    }
+
+    private void configureGamepadInput() {
+        mGamepad.init(mGamepadConfig, mGamepadInvisible);
+        mGamepad.setOnKeyDownListener(SDLActivity::onNativeKeyDown);
+        mGamepad.setOnKeyUpListener(SDLActivity::onNativeKeyUp);
     }
 
     private void installFpsText() {
@@ -259,6 +280,7 @@ public class SdlGameActivity extends SDLActivity {
 
         String[] items = new String[] {
                 "\u7ee7\u7eed\u6e38\u620f",
+                "\u901a\u7528\u4fee\u6539\u5668",
                 gamepadToggle,
                 movementToggle,
                 "\u865a\u62df\u6309\u952e\u8bbe\u7f6e",
@@ -271,16 +293,18 @@ public class SdlGameActivity extends SDLActivity {
                 .setTitle("\u64ad\u653e\u5668\u9009\u9879")
                 .setItems(items, (dialog, which) -> {
                     if (which == 1) {
-                        toggleGamepadVisibility();
+                        showModifierSettings();
                     } else if (which == 2) {
-                        toggleMovementMode();
+                        toggleGamepadVisibility();
                     } else if (which == 3) {
-                        showGamepadSettings();
+                        toggleMovementMode();
                     } else if (which == 4) {
-                        toggleGamepadLayoutEdit();
+                        showGamepadSettings();
                     } else if (which == 5) {
-                        saveGamepadLayout();
+                        toggleGamepadLayoutEdit();
                     } else if (which == 6) {
+                        saveGamepadLayout();
+                    } else if (which == 7) {
                         finish();
                     }
                 })
@@ -323,11 +347,119 @@ public class SdlGameActivity extends SDLActivity {
 
         boolean joystick = mGamepad.toggleMovementMode();
         mGamepadConfig.layout = mGamepad.exportLayout();
+        MkxpLauncher.INSTANCE.saveGamepadLayout(this, mGamepadConfig.layout);
         Toast.makeText(
                 this,
                 joystick ? "\u5df2\u5207\u6362\u4e3a\u6447\u6746" : "\u5df2\u5207\u6362\u4e3a\u5341\u5b57\u952e",
                 Toast.LENGTH_SHORT
         ).show();
+    }
+
+    private void showModifierSettings() {
+        ModifierConfig working = copyModifierConfig(mModifierConfig);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(32), dp(18), dp(32), 0);
+
+        Switch infiniteHp = new Switch(this);
+        infiniteHp.setText("\u65e0\u9650 HP");
+        infiniteHp.setChecked(working.infiniteHp);
+        infiniteHp.setOnCheckedChangeListener((buttonView, checked) -> working.infiniteHp = checked);
+        content.addView(infiniteHp);
+
+        Switch infiniteMp = new Switch(this);
+        infiniteMp.setText("\u65e0\u9650 MP/MB");
+        infiniteMp.setChecked(working.infiniteMp);
+        infiniteMp.setOnCheckedChangeListener((buttonView, checked) -> working.infiniteMp = checked);
+        content.addView(infiniteMp);
+
+        Switch instantKill = new Switch(this);
+        instantKill.setText("\u79d2\u6740\u654c\u4eba");
+        instantKill.setChecked(working.instantKill);
+        instantKill.setOnCheckedChangeListener((buttonView, checked) -> working.instantKill = checked);
+        content.addView(instantKill);
+
+        Switch noClip = new Switch(this);
+        noClip.setText("\u65e0\u89c6\u6811\u6728\u548c\u5730\u56fe\u78b0\u649e");
+        noClip.setChecked(working.noClip);
+        noClip.setOnCheckedChangeListener((buttonView, checked) -> working.noClip = checked);
+        content.addView(noClip);
+
+        Switch allItems = new Switch(this);
+        allItems.setText("\u83b7\u53d6\u5168\u90e8\u7269\u54c1");
+        allItems.setChecked(working.allItems);
+        allItems.setOnCheckedChangeListener((buttonView, checked) -> working.allItems = checked);
+        content.addView(allItems);
+
+        Switch goldEnabled = new Switch(this);
+        goldEnabled.setText("\u542f\u7528\u91d1\u94b1\u4fee\u6539");
+        goldEnabled.setChecked(working.goldEnabled);
+        goldEnabled.setOnCheckedChangeListener((buttonView, checked) -> working.goldEnabled = checked);
+        content.addView(goldEnabled);
+
+        EditText goldValue = numberEditText(String.valueOf(Math.max(0, working.gold)));
+        goldValue.setHint("\u91d1\u94b1");
+        content.addView(goldValue);
+
+        Switch expEnabled = new Switch(this);
+        expEnabled.setText("\u542f\u7528\u7ecf\u9a8c\u4fee\u6539");
+        expEnabled.setChecked(working.expEnabled);
+        expEnabled.setOnCheckedChangeListener((buttonView, checked) -> working.expEnabled = checked);
+        content.addView(expEnabled);
+
+        EditText expValue = numberEditText(String.valueOf(Math.max(0, working.exp)));
+        expValue.setHint("\u7ecf\u9a8c");
+        content.addView(expValue);
+
+        new AlertDialog.Builder(this)
+                .setTitle("\u901a\u7528\u4fee\u6539\u5668")
+                .setView(wrapInScrollView(content))
+                .setPositiveButton("\u5e94\u7528", (dialog, which) -> {
+                    working.gold = parsePositiveInt(goldValue.getText().toString(), 0);
+                    working.exp = parsePositiveInt(expValue.getText().toString(), 0);
+                    working.bumpApplyNonce();
+                    mModifierConfig = working;
+                    mModifierConfig.save(this, GAME_ID, MODIFIER_CONFIG_PATH);
+                    applyRuntimeModifier();
+                    Toast.makeText(this, "\u4fee\u6539\u5668\u5df2\u5e94\u7528", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("\u53d6\u6d88", null)
+                .show();
+    }
+
+    private EditText numberEditText(String value) {
+        EditText editText = new EditText(this);
+        editText.setInputType(InputType.TYPE_CLASS_NUMBER);
+        editText.setSingleLine(true);
+        editText.setText(value);
+        editText.setSelectAllOnFocus(true);
+        return editText;
+    }
+
+    private ModifierConfig copyModifierConfig(ModifierConfig source) {
+        ModifierConfig config = new ModifierConfig();
+        config.infiniteHp = source.infiniteHp;
+        config.infiniteMp = source.infiniteMp;
+        config.instantKill = source.instantKill;
+        config.noClip = source.noClip;
+        config.allItems = source.allItems;
+        config.goldEnabled = source.goldEnabled;
+        config.gold = source.gold;
+        config.expEnabled = source.expEnabled;
+        config.exp = source.exp;
+        config.applyNonce = source.applyNonce;
+        return config;
+    }
+
+    private void applyRuntimeModifier() {
+        if (this instanceof EasyRpgPlayerActivity) {
+            try {
+                EasyRpgPlayerActivity.applyModifier(MODIFIER_CONFIG_PATH);
+            } catch (UnsatisfiedLinkError error) {
+                Toast.makeText(this, "\u5f53\u524d EasyRPG \u6838\u5fc3\u672a\u5305\u542b\u4fee\u6539\u5668\u7b26\u53f7\uff0c\u8bf7\u91cd\u65b0\u6253\u5305\u6838\u5fc3\u5e93", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private void showGamepadSettings() {
@@ -362,25 +494,12 @@ public class SdlGameActivity extends SDLActivity {
         content.addView(opacityLabel);
         content.addView(opacitySeek);
 
-        TextView scaleLabel = new TextView(this);
-        final int[] scale = new int[] { clamp(working.scale, 60, 160) };
-        scaleLabel.setText("\u5927\u5c0f\uff1a" + scale[0] + "%");
-        SeekBar scaleSeek = new SeekBar(this);
-        scaleSeek.setMax(100);
-        scaleSeek.setProgress(scale[0] - 60);
-        scaleSeek.setOnSeekBarChangeListener(new SimpleSeekListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (!fromUser) {
-                    return;
-                }
-                scale[0] = progress + 60;
-                working.scale = scale[0];
-                scaleLabel.setText("\u5927\u5c0f\uff1a" + scale[0] + "%");
-            }
-        });
-        content.addView(scaleLabel);
-        content.addView(scaleSeek);
+        String[] sizeIds = mGamepad.getControlSizeIds();
+        int[] sizeValues = new int[sizeIds.length];
+        for (int i = 0; i < sizeIds.length; i++) {
+            sizeValues[i] = mGamepad.getControlSizeDp(sizeIds[i]);
+        }
+        addGamepadSizeControls(content, sizeIds, sizeValues);
 
         Switch diagonalSwitch = new Switch(this);
         diagonalSwitch.setText("\u65b9\u5411\u952e\u5141\u8bb8\u659c\u5411\u79fb\u52a8");
@@ -399,7 +518,12 @@ public class SdlGameActivity extends SDLActivity {
                 .setTitle("\u865a\u62df\u6309\u952e\u8bbe\u7f6e")
                 .setView(wrapInScrollView(content))
                 .setPositiveButton("\u5e94\u7528", (dialog, which) -> {
+                    working.opacity = opacity[0];
                     applyConfigFields(mGamepadConfig, working);
+                    mGamepad.setOpacity(opacity[0]);
+                    for (int i = 0; i < sizeIds.length; i++) {
+                        mGamepad.setControlSizeDp(sizeIds[i], sizeValues[i]);
+                    }
                     working.layout = mGamepad.exportLayout();
                     mGamepadConfig = working;
                     MkxpLauncher.INSTANCE.saveGamepadLayout(this, working.layout);
@@ -407,6 +531,40 @@ public class SdlGameActivity extends SDLActivity {
                 })
                 .setNegativeButton("\u53d6\u6d88", null)
                 .show();
+    }
+
+    private void addGamepadSizeControls(LinearLayout content, String[] sizeIds, int[] sizeValues) {
+        TextView title = new TextView(this);
+        title.setText("\u5355\u4e2a\u6309\u952e\u5927\u5c0f");
+        title.setTextSize(16f);
+        title.setPadding(0, dp(12), 0, dp(4));
+        content.addView(title);
+
+        for (int i = 0; i < sizeIds.length; i++) {
+            final int index = i;
+            String id = sizeIds[index];
+            int min = mGamepad.getMinControlSizeDp(id);
+            int max = mGamepad.getMaxControlSizeDp(id);
+            sizeValues[index] = clamp(sizeValues[index], min, max);
+
+            TextView label = new TextView(this);
+            label.setText(mGamepad.getControlLabel(id) + "\uff1a" + sizeValues[index] + "dp");
+            SeekBar seekBar = new SeekBar(this);
+            seekBar.setMax(max - min);
+            seekBar.setProgress(sizeValues[index] - min);
+            seekBar.setOnSeekBarChangeListener(new SimpleSeekListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    if (!fromUser) {
+                        return;
+                    }
+                    sizeValues[index] = min + progress;
+                    label.setText(mGamepad.getControlLabel(id) + "\uff1a" + sizeValues[index] + "dp");
+                }
+            });
+            content.addView(label);
+            content.addView(seekBar);
+        }
     }
 
     private void showAddCustomButtonDialog() {
@@ -430,15 +588,15 @@ public class SdlGameActivity extends SDLActivity {
         final int[] sizeDp = new int[] { 46 };
         sizeLabel.setText("\u6309\u952e\u5927\u5c0f\uff1a" + sizeDp[0] + "dp");
         SeekBar sizeSeek = new SeekBar(this);
-        sizeSeek.setMax(68);
-        sizeSeek.setProgress(sizeDp[0] - 28);
+        sizeSeek.setMax(96);
+        sizeSeek.setProgress(sizeDp[0] - 24);
         sizeSeek.setOnSeekBarChangeListener(new SimpleSeekListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (!fromUser) {
                     return;
                 }
-                sizeDp[0] = progress + 28;
+                sizeDp[0] = progress + 24;
                 sizeLabel.setText("\u6309\u952e\u5927\u5c0f\uff1a" + sizeDp[0] + "dp");
             }
         });
@@ -456,6 +614,7 @@ public class SdlGameActivity extends SDLActivity {
                     mGamepadLayoutEditing = true;
                     mGamepad.setLayoutEditMode(true);
                     mGamepadConfig.layout = mGamepad.exportLayout();
+                    MkxpLauncher.INSTANCE.saveGamepadLayout(this, mGamepadConfig.layout);
                     Toast.makeText(this, "\u5df2\u6dfb\u52a0\uff0c\u62d6\u52a8\u5230\u4f4d\u7f6e\u540e\u8bf7\u4fdd\u5b58\u5e03\u5c40", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("\u53d6\u6d88", null)
@@ -531,6 +690,20 @@ public class SdlGameActivity extends SDLActivity {
         config.keycodeCTRL = source.keycodeCTRL;
         config.keycodeALT = source.keycodeALT;
         config.keycodeSHIFT = source.keycodeSHIFT;
+        config.keycodeRUN = source.keycodeRUN;
+        config.physicalMappingEnabled = source.physicalMappingEnabled;
+        config.physicalBackAsB = source.physicalBackAsB;
+        config.physicalKeycodeA = source.physicalKeycodeA;
+        config.physicalKeycodeB = source.physicalKeycodeB;
+        config.physicalKeycodeX = source.physicalKeycodeX;
+        config.physicalKeycodeY = source.physicalKeycodeY;
+        config.physicalKeycodeL1 = source.physicalKeycodeL1;
+        config.physicalKeycodeR1 = source.physicalKeycodeR1;
+        config.physicalKeycodeL2 = source.physicalKeycodeL2;
+        config.physicalKeycodeR2 = source.physicalKeycodeR2;
+        config.physicalKeycodeStart = source.physicalKeycodeStart;
+        config.physicalKeycodeSelect = source.physicalKeycodeSelect;
+        config.physicalKeycodeRun = source.physicalKeycodeRun;
         return config;
     }
 
@@ -550,6 +723,20 @@ public class SdlGameActivity extends SDLActivity {
         target.keycodeCTRL = source.keycodeCTRL;
         target.keycodeALT = source.keycodeALT;
         target.keycodeSHIFT = source.keycodeSHIFT;
+        target.keycodeRUN = source.keycodeRUN;
+        target.physicalMappingEnabled = source.physicalMappingEnabled;
+        target.physicalBackAsB = source.physicalBackAsB;
+        target.physicalKeycodeA = source.physicalKeycodeA;
+        target.physicalKeycodeB = source.physicalKeycodeB;
+        target.physicalKeycodeX = source.physicalKeycodeX;
+        target.physicalKeycodeY = source.physicalKeycodeY;
+        target.physicalKeycodeL1 = source.physicalKeycodeL1;
+        target.physicalKeycodeR1 = source.physicalKeycodeR1;
+        target.physicalKeycodeL2 = source.physicalKeycodeL2;
+        target.physicalKeycodeR2 = source.physicalKeycodeR2;
+        target.physicalKeycodeStart = source.physicalKeycodeStart;
+        target.physicalKeycodeSelect = source.physicalKeycodeSelect;
+        target.physicalKeycodeRun = source.physicalKeycodeRun;
     }
 
     private GamepadConfig readGamepadConfigFromIntent() {
@@ -568,6 +755,20 @@ public class SdlGameActivity extends SDLActivity {
         config.keycodeCTRL = getIntent().getIntExtra(MkxpLauncher.EXTRA_GAMEPAD_KEY_CTRL, KeyEvent.KEYCODE_CTRL_LEFT);
         config.keycodeALT = getIntent().getIntExtra(MkxpLauncher.EXTRA_GAMEPAD_KEY_ALT, KeyEvent.KEYCODE_ALT_LEFT);
         config.keycodeSHIFT = getIntent().getIntExtra(MkxpLauncher.EXTRA_GAMEPAD_KEY_SHIFT, KeyEvent.KEYCODE_SHIFT_LEFT);
+        config.keycodeRUN = getIntent().getIntExtra(MkxpLauncher.EXTRA_GAMEPAD_KEY_RUN, KeyEvent.KEYCODE_SHIFT_LEFT);
+        config.physicalMappingEnabled = getIntent().getBooleanExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_MAPPING, true);
+        config.physicalBackAsB = getIntent().getBooleanExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_BACK_AS_B, true);
+        config.physicalKeycodeA = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_A, KeyEvent.KEYCODE_Z);
+        config.physicalKeycodeB = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_B, KeyEvent.KEYCODE_X);
+        config.physicalKeycodeX = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_X, KeyEvent.KEYCODE_A);
+        config.physicalKeycodeY = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_Y, KeyEvent.KEYCODE_S);
+        config.physicalKeycodeL1 = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_L1, KeyEvent.KEYCODE_Q);
+        config.physicalKeycodeR1 = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_R1, KeyEvent.KEYCODE_W);
+        config.physicalKeycodeL2 = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_L2, KeyEvent.KEYCODE_PAGE_UP);
+        config.physicalKeycodeR2 = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_R2, KeyEvent.KEYCODE_PAGE_DOWN);
+        config.physicalKeycodeStart = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_START, KeyEvent.KEYCODE_ENTER);
+        config.physicalKeycodeSelect = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_SELECT, KeyEvent.KEYCODE_ESCAPE);
+        config.physicalKeycodeRun = getIntent().getIntExtra(MkxpLauncher.EXTRA_PHYSICAL_GAMEPAD_KEY_RUN, KeyEvent.KEYCODE_SHIFT_LEFT);
         config.layout = stringExtra(MkxpLauncher.EXTRA_GAMEPAD_LAYOUT);
         return config;
     }
@@ -580,6 +781,14 @@ public class SdlGameActivity extends SDLActivity {
     private int clamp(Integer value, int min, int max) {
         int safeValue = value == null ? min : value;
         return Math.max(min, Math.min(max, safeValue));
+    }
+
+    private int parsePositiveInt(String value, int fallback) {
+        try {
+            return Math.max(0, Math.min(99999999, Integer.parseInt(value.trim())));
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     private String keyLabel(int keyCode) {

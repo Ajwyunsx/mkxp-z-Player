@@ -38,37 +38,21 @@
 #include <SDL_ttf.h>
 
 #ifndef MKXPZ_BUILD_XCODE
-#ifndef MKXPZ_CJK_FONT
-#include "liberation.ttf.xxd"
-#else
+#ifdef __ANDROID__
 #include "wqymicrohei.ttf.xxd"
-#endif
-
-#ifndef MKXPZ_CJK_FONT
-#define BUNDLED_FONT liberation
 #else
-#define BUNDLED_FONT wqymicrohei
+#include "liberation.ttf.xxd"
 #endif
-
-#define BUNDLED_FONT_DECL(FONT) \
-	extern unsigned char assets_##FONT##_ttf[]; \
-	extern unsigned int assets_##FONT##_ttf_len;
-
-BUNDLED_FONT_DECL(liberation)
-
-#define BUNDLED_FONT_D(f) assets_## f ##_ttf
-#define BUNDLED_FONT_L(f) assets_## f ##_ttf_len
-
-// Go fuck yourself CPP
-#define BNDL_F_D(f) BUNDLED_FONT_D(f)
-#define BNDL_F_L(f) BUNDLED_FONT_L(f)
-
 #endif
 
 static SDL_RWops *openBundledFont()
 {
 #ifndef MKXPZ_BUILD_XCODE
-	return SDL_RWFromConstMem(BNDL_F_D(BUNDLED_FONT), BNDL_F_L(BUNDLED_FONT));
+#ifdef __ANDROID__
+	return SDL_RWFromConstMem(assets_wqymicrohei_ttf, assets_wqymicrohei_ttf_len);
+#else
+	return SDL_RWFromConstMem(assets_liberation_ttf, assets_liberation_ttf_len);
+#endif
 #else
 	return SDL_RWFromFile(mkxp_fs::getPathForAsset("Fonts/liberation", "ttf").c_str(), "rb");
 #endif

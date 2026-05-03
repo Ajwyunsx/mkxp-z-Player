@@ -296,6 +296,34 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         return new String[0];
     }
 
+    /**
+     * mkxp-z uses a custom foreground resume path from SdlGameActivity. EasyRPG
+     * needs the upstream SDL Android onStart resume to recreate rendering after
+     * returning from the background.
+     */
+    protected boolean shouldResumeInOnStartForMultiWindow() {
+        return false;
+    }
+
+    /**
+     * Some frontends run better with the pre-Android-N pause/resume timing even
+     * on modern Android. Keep the default onStop/onStart path for mkxp-z, and
+     * let EasyRPG opt into immediate pause/resume so its EGL surface is backed
+     * up before Android tears it down.
+     */
+    protected boolean shouldUseOnPauseResumeForMultiWindow() {
+        return false;
+    }
+
+    /**
+     * Some frontends need full focus callbacks even outside the Android-N
+     * multi-window branch. The default mkxp-z path stays aligned with the
+     * reference launcher below.
+     */
+    protected boolean shouldUseFullFocusLifecycle() {
+        return false;
+    }
+
     public static void initialize() {
         // The static nature of the singleton and Android quirkyness force us to initialize everything here
         // Otherwise, when exiting the app and returning to it, these variables *keep* their pre exit values
@@ -461,7 +489,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(true);
         }
-        if (!mHasMultiWindow) {
+        if (!mHasMultiWindow || shouldUseOnPauseResumeForMultiWindow()) {
             pauseNativeThread();
         }
     }
@@ -474,7 +502,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         if (mHIDDeviceManager != null) {
             mHIDDeviceManager.setFrozen(false);
         }
-        if (!mHasMultiWindow) {
+        if (!mHasMultiWindow || shouldUseOnPauseResumeForMultiWindow()) {
             resumeNativeThread();
         }
     }
@@ -483,7 +511,7 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected void onStop() {
         Log.v(TAG, "onStop()");
         super.onStop();
-        if (mHasMultiWindow) {
+        if (mHasMultiWindow && !shouldUseOnPauseResumeForMultiWindow()) {
             pauseNativeThread();
         }
     }
@@ -494,9 +522,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
         super.onStart();
         // At this moment, We are now starting SDL thread from MainActivity
         // using the runSDLThread method.
-        //if (mHasMultiWindow) {
-        //    resumeNativeThread();
-        //}
+        if (shouldResumeInOnStartForMultiWindow()
+                && mHasMultiWindow
+                && !shouldUseOnPauseResumeForMultiWindow()) {
+            resumeNativeThread();
+        }
     }
 
     public static int getCurrentOrientation() {
@@ -540,12 +570,34 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         mHasFocus = hasFocus;
 
+        if (shouldUseFullFocusLifecycle()) {
+            if (hasFocus) {
+                mNextNativeState = NativeState.RESUMED;
+                SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
+                SDLActivity.handleNativeState();
+                nativeFocusChanged(true);
+            } else {
+                nativeFocusChanged(false);
+                if (!mHasMultiWindow) {
+                    mNextNativeState = NativeState.PAUSED;
+                    SDLActivity.handleNativeState();
+                }
+            }
+            return;
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             if (hasFocus) {
                 mNextNativeState = NativeState.RESUMED;
                 SDLActivity.getMotionListener().reclaimRelativeMouseModeIfNeeded();
                 SDLActivity.handleNativeState();
                 nativeFocusChanged(true);
+            } else {
+                nativeFocusChanged(false);
+                if (!mHasMultiWindow) {
+                    mNextNativeState = NativeState.PAUSED;
+                    SDLActivity.handleNativeState();
+                }
             }
         }
     }
@@ -596,15 +648,24 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
             // Send Quit event to "SDLThread" thread
             SDLActivity.nativeSendQuit();
 
-            // Wait for "SDLThread" thread to end
+            // Wait briefly for "SDLThread" to end. Some RGSS games can hang while
+            // tearing down OpenGL/audio after a black-screen launch; blocking here
+            // leaves the :game process half-alive and breaks the next launch.
             try {
-                SDLActivity.mSDLThread.join();
+                SDLActivity.mSDLThread.join(1500);
             } catch(Exception e) {
                 Log.v(TAG, "Problem stopping SDLThread: " + e);
             }
+            if (SDLActivity.mSDLThread != null && SDLActivity.mSDLThread.isAlive()) {
+                Log.w(TAG, "SDLThread did not stop in time; process owner will terminate the game process");
+            } else {
+                SDLActivity.mSDLThread = null;
+            }
         }
 
-        SDLActivity.nativeQuit();
+        if (SDLActivity.mSDLThread == null) {
+            SDLActivity.nativeQuit();
+        }
 
         super.onDestroy();
     }

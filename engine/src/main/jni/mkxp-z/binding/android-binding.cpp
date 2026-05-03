@@ -152,6 +152,49 @@ RB_METHOD(androidInMultiWindow)
 	return rb_bool_new(winMode);
 }
 
+RB_METHOD(androidDisplayMetrics)
+{
+	RB_UNUSED_PARAM;
+
+	VALUE hash = rb_hash_new();
+	JNIEnv *env = (JNIEnv *)SDL_AndroidGetJNIEnv();
+	jobject activity = (jobject)SDL_AndroidGetActivity();
+	jclass activityClass = env->GetObjectClass(activity);
+
+	jmethodID getResources = env->GetMethodID(activityClass, "getResources", "()Landroid/content/res/Resources;");
+	jobject resources = env->CallObjectMethod(activity, getResources);
+	jclass resourcesClass = env->GetObjectClass(resources);
+
+	jmethodID getDisplayMetrics = env->GetMethodID(resourcesClass, "getDisplayMetrics", "()Landroid/util/DisplayMetrics;");
+	jobject metrics = env->CallObjectMethod(resources, getDisplayMetrics);
+	jclass metricsClass = env->GetObjectClass(metrics);
+
+	jfieldID widthPixels = env->GetFieldID(metricsClass, "widthPixels", "I");
+	jfieldID heightPixels = env->GetFieldID(metricsClass, "heightPixels", "I");
+	jfieldID densityDpi = env->GetFieldID(metricsClass, "densityDpi", "I");
+	jfieldID density = env->GetFieldID(metricsClass, "density", "F");
+	jfieldID scaledDensity = env->GetFieldID(metricsClass, "scaledDensity", "F");
+	jfieldID xdpi = env->GetFieldID(metricsClass, "xdpi", "F");
+	jfieldID ydpi = env->GetFieldID(metricsClass, "ydpi", "F");
+
+	rb_hash_aset(hash, ID2SYM(rb_intern("width_pixels")), INT2NUM(env->GetIntField(metrics, widthPixels)));
+	rb_hash_aset(hash, ID2SYM(rb_intern("height_pixels")), INT2NUM(env->GetIntField(metrics, heightPixels)));
+	rb_hash_aset(hash, ID2SYM(rb_intern("density_dpi")), INT2NUM(env->GetIntField(metrics, densityDpi)));
+	rb_hash_aset(hash, ID2SYM(rb_intern("density")), rb_float_new(env->GetFloatField(metrics, density)));
+	rb_hash_aset(hash, ID2SYM(rb_intern("scaled_density")), rb_float_new(env->GetFloatField(metrics, scaledDensity)));
+	rb_hash_aset(hash, ID2SYM(rb_intern("xdpi")), rb_float_new(env->GetFloatField(metrics, xdpi)));
+	rb_hash_aset(hash, ID2SYM(rb_intern("ydpi")), rb_float_new(env->GetFloatField(metrics, ydpi)));
+
+	env->DeleteLocalRef(metricsClass);
+	env->DeleteLocalRef(metrics);
+	env->DeleteLocalRef(resourcesClass);
+	env->DeleteLocalRef(resources);
+	env->DeleteLocalRef(activityClass);
+	env->DeleteLocalRef(activity);
+
+	return hash;
+}
+
 void androidBindingInit()
 {
 	VALUE module = rb_define_module("Android");
@@ -163,6 +206,7 @@ void androidBindingInit()
 	_rb_define_module_function(module, "is_tv?", androidIsTV);
 	_rb_define_module_function(module, "is_chromebook?", androidIsChromebook);
 	_rb_define_module_function(module, "is_dex_mode?", androidIsDeXMode);
+	_rb_define_module_function(module, "display_metrics", androidDisplayMetrics);
 
 	// Vibration
 	_rb_define_module_function(module, "has_vibrator?", androidHasVibrator);

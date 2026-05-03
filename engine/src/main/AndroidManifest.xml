@@ -14,18 +14,20 @@
             android:process=":game"
             android:resizeableActivity="false"
             android:screenOrientation="sensorLandscape"
+            android:taskAffinity="${applicationId}.game"
             android:theme="@style/Theme.MkxpGame" />
         <activity
             android:name=".SdlGameActivity"
-            android:alwaysRetainTaskState="true"
+            android:alwaysRetainTaskState="false"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|density|keyboard|keyboardHidden|navigation"
             android:exported="false"
             android:immersive="true"
-            android:launchMode="singleTop"
+            android:launchMode="standard"
             android:preferMinimalPostProcessing="true"
             android:process=":game"
             android:resizeableActivity="true"
             android:screenOrientation="sensorLandscape"
+            android:taskAffinity="${applicationId}.game"
             android:theme="@style/Theme.MkxpGame" />
         <activity
             android:name=".WebGameActivity"
@@ -38,6 +40,20 @@
             android:process=":game"
             android:resizeableActivity="false"
             android:screenOrientation="sensorLandscape"
+            android:taskAffinity="${applicationId}.game"
+            android:theme="@style/Theme.MkxpGame" />
+        <activity
+            android:name="org.easyrpg.player.player.EasyRpgPlayerActivity"
+            android:alwaysRetainTaskState="false"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|density|keyboard|keyboardHidden|navigation"
+            android:exported="false"
+            android:immersive="true"
+            android:launchMode="standard"
+            android:preferMinimalPostProcessing="true"
+            android:process=":game"
+            android:resizeableActivity="true"
+            android:screenOrientation="sensorLandscape"
+            android:taskAffinity="${applicationId}.game"
             android:theme="@style/Theme.MkxpGame" />
     </application>
 </manifest>

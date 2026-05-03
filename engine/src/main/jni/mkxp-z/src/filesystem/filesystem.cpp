@@ -34,6 +34,7 @@
 #include <physfs.h>
 
 #include <algorithm>
+#include <ctype.h>
 #include <stack>
 #include <stdio.h>
 #include <string.h>
@@ -605,6 +606,22 @@ struct OpenReadEnumData {
         physfsError(0) {}
 };
 
+static bool caseInsensitivePrefixEquals(const char *value, const char *prefix,
+                                        size_t prefixN) {
+  for (size_t i = 0; i < prefixN; ++i) {
+    const unsigned char valueChar = static_cast<unsigned char>(value[i]);
+    const unsigned char prefixChar = static_cast<unsigned char>(prefix[i]);
+
+    if (valueChar == '\0' || prefixChar == '\0')
+      return false;
+
+    if (tolower(valueChar) != tolower(prefixChar))
+      return false;
+  }
+
+  return true;
+}
+
 static PHYSFS_EnumerateCallbackResult
 openReadEnumCB(void *d, const char *dirpath, const char *filename) {
   OpenReadEnumData &data = *static_cast<OpenReadEnumData *>(d);
@@ -615,7 +632,7 @@ openReadEnumCB(void *d, const char *dirpath, const char *filename) {
     return PHYSFS_ENUM_STOP;
 
   /* If there's not even a partial match, continue searching */
-  if (strncmp(filename, data.filename, data.filenameN) != 0)
+  if (!caseInsensitivePrefixEquals(filename, data.filename, data.filenameN))
     return PHYSFS_ENUM_OK;
 
   if (!*dirpath) {

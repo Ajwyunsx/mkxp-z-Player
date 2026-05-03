@@ -158,6 +158,7 @@ public class GamepadButton extends ImageView
 
     private int getTextSize()
     {
+        mTextSize = 36;
         mPaint.setTextSize(mTextSize);
 
         int mIntrinsicWidth = (int) Math.round(mPaint.measureText(mText, 0, mText.length()) + .5);

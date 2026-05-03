@@ -218,7 +218,6 @@ private:
 		void unlock(bool multi);
 		void waitForUnlock();
 		bool waitForUnlockTimeout(uint32_t timeoutMs);
-
 		AtomicFlag locked;
 		SDL_mutex *mut;
 		SDL_cond *cond;
@@ -245,10 +244,6 @@ struct RGSSThreadData
     
     // Set when window is being adjusted (resize, reposition)
     AtomicFlag rqWindowAdjust;
-
-    /* Set after Android resumes so the RGSS render thread can bind
-     * its GL context to the recreated surface before drawing again. */
-    AtomicFlag rqGlRebind;
 
 	EventThread *ethread;
 	UnidirMessage<Vec2i> windowSizeMsg;

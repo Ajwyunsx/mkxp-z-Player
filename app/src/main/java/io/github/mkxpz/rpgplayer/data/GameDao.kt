@@ -16,6 +16,9 @@ interface GameDao {
     @Query("SELECT * FROM games WHERE id = :id")
     suspend fun getGame(id: String): GameEntry?
 
+    @Query("SELECT * FROM games WHERE originalUri = :originalUri LIMIT 1")
+    suspend fun getByOriginalUri(originalUri: String): GameEntry?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: GameEntry)
 

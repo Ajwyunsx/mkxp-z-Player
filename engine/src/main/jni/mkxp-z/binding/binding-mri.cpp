@@ -846,8 +846,9 @@ struct evalArg {
 };
 
 static VALUE evalHelper(evalArg *arg) {
-    VALUE argv[] = {arg->string, Qnil, arg->filename};
-    return rb_funcall2(Qnil, rb_intern("eval"), ARRAY_SIZE(argv), argv);
+    VALUE topLevelBinding = rb_const_get(rb_cObject, rb_intern("TOPLEVEL_BINDING"));
+    VALUE argv[] = {arg->string, topLevelBinding, arg->filename};
+    return rb_funcall2(rb_mKernel, rb_intern("eval"), ARRAY_SIZE(argv), argv);
 }
 
 static VALUE evalString(VALUE string, VALUE filename, int *state) {

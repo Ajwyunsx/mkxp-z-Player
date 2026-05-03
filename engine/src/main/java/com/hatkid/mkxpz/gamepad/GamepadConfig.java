@@ -33,4 +33,20 @@ public class GamepadConfig
     public Integer keycodeCTRL = KeyEvent.KEYCODE_CTRL_LEFT;
     public Integer keycodeALT = KeyEvent.KEYCODE_ALT_LEFT;
     public Integer keycodeSHIFT = KeyEvent.KEYCODE_SHIFT_LEFT;
+    public Integer keycodeRUN = KeyEvent.KEYCODE_SHIFT_LEFT;
+
+    /** Physical Android controller mappings. Values are target keyboard keycodes sent to the game. */
+    public Boolean physicalMappingEnabled = true;
+    public Boolean physicalBackAsB = true;
+    public Integer physicalKeycodeA = KeyEvent.KEYCODE_Z;
+    public Integer physicalKeycodeB = KeyEvent.KEYCODE_X;
+    public Integer physicalKeycodeX = KeyEvent.KEYCODE_A;
+    public Integer physicalKeycodeY = KeyEvent.KEYCODE_S;
+    public Integer physicalKeycodeL1 = KeyEvent.KEYCODE_Q;
+    public Integer physicalKeycodeR1 = KeyEvent.KEYCODE_W;
+    public Integer physicalKeycodeL2 = KeyEvent.KEYCODE_PAGE_UP;
+    public Integer physicalKeycodeR2 = KeyEvent.KEYCODE_PAGE_DOWN;
+    public Integer physicalKeycodeStart = KeyEvent.KEYCODE_ENTER;
+    public Integer physicalKeycodeSelect = KeyEvent.KEYCODE_ESCAPE;
+    public Integer physicalKeycodeRun = KeyEvent.KEYCODE_SHIFT_LEFT;
 }

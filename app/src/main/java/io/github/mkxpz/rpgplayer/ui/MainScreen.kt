@@ -2,6 +2,7 @@ package io.github.mkxpz.rpgplayer.ui
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Environment
 import android.provider.Settings as AndroidSettings
@@ -9,6 +10,7 @@ import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +35,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -75,20 +79,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import java.io.File
+import java.util.Locale
 import io.github.mkxpz.rpgplayer.data.GameEntry
 import io.github.mkxpz.rpgplayer.data.LauncherSettings
+import io.github.mkxpz.rpgplayer.data.PhysicalGamepadButton
 import io.github.mkxpz.rpgplayer.data.PreferredImportMode
 import io.github.mkxpz.rpgplayer.data.RpgMakerEngine
 import io.github.mkxpz.rpgplayer.data.StoredImportMode
 import io.github.mkxpz.rpgplayer.data.ThemeColorSource
 import io.github.mkxpz.rpgplayer.data.ThemeModeSetting
 import io.github.mkxpz.rpgplayer.data.VirtualGamepadButton
+import io.github.mkxpz.rpgplayer.domain.StandaloneApkOptions
 import io.github.mkxpz.rpgplayer.ui.theme.supportsDynamicColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,27 +107,45 @@ fun MainScreen(
     uiState: MainUiState,
     snackbarHostState: SnackbarHostState,
     onImportTree: (Uri) -> Unit,
+    onImportVxRtpTree: (Uri) -> Unit,
+    onImportVxAceRtpTree: (Uri) -> Unit,
+    onDownloadVxRtp: () -> Unit,
+    onDownloadVxAceRtp: () -> Unit,
     onAddDirectPath: (String) -> Unit,
     onLaunch: (GameEntry) -> Unit,
     onDelete: (GameEntry, Boolean) -> Unit,
+    onUpdateGameMetadata: (GameEntry, String, Uri?, Boolean) -> Unit,
+    onExportStandaloneApk: (GameEntry, StandaloneApkOptions) -> Unit,
     onThemeModeChange: (ThemeModeSetting) -> Unit,
     onColorSourceChange: (ThemeColorSource) -> Unit,
     onManualSeedColorChange: (Long) -> Unit,
     onPreferredImportModeChange: (PreferredImportMode) -> Unit,
     onVirtualGamepadChange: (Boolean) -> Unit,
     onVirtualGamepadOpacityChange: (Int) -> Unit,
-    onVirtualGamepadScaleChange: (Int) -> Unit,
     onVirtualGamepadDiagonalMovementChange: (Boolean) -> Unit,
     onVirtualGamepadKeyChange: (VirtualGamepadButton, Int) -> Unit,
+    onPhysicalGamepadMappingChange: (Boolean) -> Unit,
+    onPhysicalGamepadBackAsBChange: (Boolean) -> Unit,
+    onPhysicalGamepadKeyChange: (PhysicalGamepadButton, Int) -> Unit,
     onFixedFramerateChange: (Int) -> Unit,
     onSmoothScalingChange: (Boolean) -> Unit,
     onKeepAspectRatioChange: (Boolean) -> Unit,
     onSoundFontPathChange: (String) -> Unit,
+    onVxRtpPathChange: (String) -> Unit,
+    onVxAceRtpPathChange: (String) -> Unit,
+    onRubyClassicCompatibilityChange: (Boolean) -> Unit,
+    onWinApiCompatibilityChange: (Boolean) -> Unit,
     onDebugLaunchChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) onImportTree(uri)
+    }
+    val vxRtpLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) onImportVxRtpTree(uri)
+    }
+    val vxAceRtpLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) onImportVxAceRtpTree(uri)
     }
     val allFilesAccessLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
 
@@ -125,6 +153,25 @@ fun MainScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showDirectPathDialog by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<GameEntry?>(null) }
+    var editTarget by remember { mutableStateOf<GameEntry?>(null) }
+    var editTitle by remember { mutableStateOf("") }
+    var editIconUri by remember { mutableStateOf<Uri?>(null) }
+    var clearEditIcon by remember { mutableStateOf(false) }
+    var exportTarget by remember { mutableStateOf<GameEntry?>(null) }
+    var exportAppName by remember { mutableStateOf("") }
+    var exportPackageName by remember { mutableStateOf("") }
+    var exportVersionCode by remember { mutableStateOf("1") }
+    var exportVersionName by remember { mutableStateOf("1.0.0") }
+    var exportIconUri by remember { mutableStateOf<Uri?>(null) }
+    val iconLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            editIconUri = uri
+            clearEditIcon = false
+        }
+    }
+    val exportIconLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) exportIconUri = uri
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets.statusBars,
@@ -174,6 +221,22 @@ fun MainScreen(
                     games = uiState.games,
                     onLaunch = onLaunch,
                     onDelete = { deleteTarget = it },
+                    onExportStandaloneApk = { entry ->
+                        exportTarget = entry
+                        exportAppName = entry.title
+                        exportPackageName = defaultStandalonePackageName(entry)
+                        exportVersionCode = "1"
+                        exportVersionName = "1.0.0"
+                        exportIconUri = entry.customIconPath
+                            ?.takeIf { File(it).isFile }
+                            ?.let { Uri.fromFile(File(it)) }
+                    },
+                    onEdit = { entry ->
+                        editTarget = entry
+                        editTitle = entry.title
+                        editIconUri = null
+                        clearEditIcon = false
+                    },
                     bottomPadding = 88.dp,
                 )
                 else -> SettingsScreen(
@@ -197,13 +260,23 @@ fun MainScreen(
                     onPreferredImportModeChange = onPreferredImportModeChange,
                     onVirtualGamepadChange = onVirtualGamepadChange,
                     onVirtualGamepadOpacityChange = onVirtualGamepadOpacityChange,
-                    onVirtualGamepadScaleChange = onVirtualGamepadScaleChange,
                     onVirtualGamepadDiagonalMovementChange = onVirtualGamepadDiagonalMovementChange,
                     onVirtualGamepadKeyChange = onVirtualGamepadKeyChange,
+                    onPhysicalGamepadMappingChange = onPhysicalGamepadMappingChange,
+                    onPhysicalGamepadBackAsBChange = onPhysicalGamepadBackAsBChange,
+                    onPhysicalGamepadKeyChange = onPhysicalGamepadKeyChange,
                     onFixedFramerateChange = onFixedFramerateChange,
                     onSmoothScalingChange = onSmoothScalingChange,
                     onKeepAspectRatioChange = onKeepAspectRatioChange,
                     onSoundFontPathChange = onSoundFontPathChange,
+                    onVxRtpPathChange = onVxRtpPathChange,
+                    onVxAceRtpPathChange = onVxAceRtpPathChange,
+                    onDownloadVxRtp = onDownloadVxRtp,
+                    onDownloadVxAceRtp = onDownloadVxAceRtp,
+                    onChooseVxRtpFolder = { vxRtpLauncher.launch(null) },
+                    onChooseVxAceRtpFolder = { vxAceRtpLauncher.launch(null) },
+                    onRubyClassicCompatibilityChange = onRubyClassicCompatibilityChange,
+                    onWinApiCompatibilityChange = onWinApiCompatibilityChange,
                     onDebugLaunchChange = onDebugLaunchChange,
                 )
             }
@@ -250,6 +323,57 @@ fun MainScreen(
             },
         )
     }
+
+    editTarget?.let { entry ->
+        EditGameDialog(
+            entry = entry,
+            title = editTitle,
+            selectedIconUri = editIconUri,
+            clearIcon = clearEditIcon,
+            onTitleChange = { editTitle = it },
+            onChooseIcon = { iconLauncher.launch("image/*") },
+            onClearIcon = {
+                editIconUri = null
+                clearEditIcon = true
+            },
+            onDismiss = { editTarget = null },
+            onConfirm = {
+                editTarget = null
+                onUpdateGameMetadata(entry, editTitle, editIconUri, clearEditIcon)
+            },
+        )
+    }
+
+    exportTarget?.let { entry ->
+        StandaloneApkDialog(
+            entry = entry,
+            appName = exportAppName,
+            packageName = exportPackageName,
+            versionCode = exportVersionCode,
+            versionName = exportVersionName,
+            iconUri = exportIconUri,
+            onAppNameChange = { exportAppName = it },
+            onPackageNameChange = { exportPackageName = it },
+            onVersionCodeChange = { exportVersionCode = it.filter(Char::isDigit).take(9) },
+            onVersionNameChange = { exportVersionName = it },
+            onChooseIcon = { exportIconLauncher.launch("image/*") },
+            onClearIcon = { exportIconUri = null },
+            onDismiss = { exportTarget = null },
+            onConfirm = {
+                exportTarget = null
+                onExportStandaloneApk(
+                    entry,
+                    StandaloneApkOptions(
+                        appName = exportAppName.trim(),
+                        packageName = exportPackageName.trim(),
+                        versionCode = exportVersionCode.toIntOrNull() ?: 1,
+                        versionName = exportVersionName.trim(),
+                        iconUri = exportIconUri?.toString(),
+                    ),
+                )
+            },
+        )
+    }
 }
 
 @Composable
@@ -257,6 +381,8 @@ private fun GamesScreen(
     games: List<GameEntry>,
     onLaunch: (GameEntry) -> Unit,
     onDelete: (GameEntry) -> Unit,
+    onExportStandaloneApk: (GameEntry) -> Unit,
+    onEdit: (GameEntry) -> Unit,
     bottomPadding: Dp,
 ) {
     if (games.isEmpty()) {
@@ -279,6 +405,8 @@ private fun GamesScreen(
                 entry = entry,
                 onLaunch = { onLaunch(entry) },
                 onDelete = { onDelete(entry) },
+                onExportStandaloneApk = { onExportStandaloneApk(entry) },
+                onEdit = { onEdit(entry) },
             )
         }
     }
@@ -319,6 +447,8 @@ private fun GameCard(
     entry: GameEntry,
     onLaunch: () -> Unit,
     onDelete: () -> Unit,
+    onExportStandaloneApk: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -329,20 +459,7 @@ private fun GameCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = entry.engine.shortLabel(),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                GameIcon(entry = entry, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -360,6 +477,12 @@ private fun GameCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = "编辑")
+                }
+                IconButton(onClick = onExportStandaloneApk) {
+                    Icon(Icons.Default.Storage, contentDescription = "导出直装 APK")
+                }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "删除")
                 }
@@ -373,6 +496,9 @@ private fun GameCard(
                     AssistChip(onClick = {}, label = { Text("加密包") })
                 }
                 AssistChip(onClick = {}, label = { Text("启动 ${entry.launchCount} 次") })
+                if (entry.hasWinApiUsage) {
+                    AssistChip(onClick = {}, label = { Text("WinAPI") })
+                }
                 Spacer(Modifier.weight(1f))
                 Button(onClick = onLaunch) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
@@ -385,6 +511,324 @@ private fun GameCard(
 }
 
 @Composable
+private fun GameIcon(
+    entry: GameEntry,
+    size: Dp,
+    selectedIconUri: Uri? = null,
+    clearIcon: Boolean = false,
+) {
+    val context = LocalContext.current
+    val selectedBitmap = remember(selectedIconUri) {
+        selectedIconUri?.let { uri ->
+            runCatching {
+                context.contentResolver.openInputStream(uri).use { input ->
+                    input?.let { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+                }
+            }.getOrNull()
+        }
+    }
+    val iconPath = if (clearIcon) null else entry.customIconPath
+    val iconModified = iconPath?.let { File(it).lastModified() } ?: 0L
+    val fileBitmap = remember(iconPath, iconModified) {
+        iconPath
+            ?.takeIf { File(it).isFile }
+            ?.let { path -> runCatching { BitmapFactory.decodeFile(path)?.asImageBitmap() }.getOrNull() }
+    }
+    val bitmap = selectedBitmap ?: fileBitmap
+
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Crop,
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = entry.engine.shortLabel(),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StandaloneApkDialog(
+    entry: GameEntry,
+    appName: String,
+    packageName: String,
+    versionCode: String,
+    versionName: String,
+    iconUri: Uri?,
+    onAppNameChange: (String) -> Unit,
+    onPackageNameChange: (String) -> Unit,
+    onVersionCodeChange: (String) -> Unit,
+    onVersionNameChange: (String) -> Unit,
+    onChooseIcon: () -> Unit,
+    onClearIcon: () -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val parsedVersionCode = versionCode.toIntOrNull()
+    val packageValid = isValidStandalonePackageName(packageName)
+    val canConfirm = appName.isNotBlank() &&
+        packageValid &&
+        parsedVersionCode != null &&
+        parsedVersionCode > 0 &&
+        versionName.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Standalone APK") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    StandaloneExportIcon(iconUri = iconUri, size = 56.dp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = entry.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = onChooseIcon) {
+                                Icon(Icons.Default.Image, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Icon")
+                            }
+                            TextButton(onClick = onClearIcon) {
+                                Text("Clear")
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = appName,
+                    onValueChange = onAppNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("App name") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = packageName,
+                    onValueChange = onPackageNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Package name") },
+                    supportingText = { Text("Use a package different from the player, e.g. com.example.game") },
+                    isError = packageName.isNotBlank() && !packageValid,
+                    singleLine = true,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = versionCode,
+                        onValueChange = onVersionCodeChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Version code") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = versionCode.isNotBlank() && (parsedVersionCode == null || parsedVersionCode <= 0),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = versionName,
+                        onValueChange = onVersionNameChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Version name") },
+                        singleLine = true,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = canConfirm) {
+                Text("Build and install")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+/*
+@Composable
+private fun StandaloneApkDialog(
+    entry: GameEntry,
+    appName: String,
+    packageName: String,
+    versionCode: String,
+    versionName: String,
+    iconUri: Uri?,
+    onAppNameChange: (String) -> Unit,
+    onPackageNameChange: (String) -> Unit,
+    onVersionCodeChange: (String) -> Unit,
+    onVersionNameChange: (String) -> Unit,
+    onChooseIcon: () -> Unit,
+    onClearIcon: () -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val parsedVersionCode = versionCode.toIntOrNull()
+    val packageValid = isValidStandalonePackageName(packageName)
+    val canConfirm = appName.isNotBlank() &&
+        packageValid &&
+        parsedVersionCode != null &&
+        parsedVersionCode > 0 &&
+        versionName.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("直装 APK 设置") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    StandaloneExportIcon(iconUri = iconUri, size = 56.dp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = entry.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = onChooseIcon) {
+                                Icon(ImageIcon, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("选择图标")
+                            }
+                            TextButton(onClick = onClearIcon) {
+                                Text("清除")
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = appName,
+                    onValueChange = onAppNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("应用名称") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = packageName,
+                    onValueChange = onPackageNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("包名") },
+                    supportingText = { Text("必须和播放器不同，例如 com.example.game") },
+                    isError = packageName.isNotBlank() && !packageValid,
+                    singleLine = true,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = versionCode,
+                        onValueChange = onVersionCodeChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("版本号") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = versionCode.isNotBlank() && (parsedVersionCode == null || parsedVersionCode <= 0),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = versionName,
+                        onValueChange = onVersionNameChange,
+                        modifier = Modifier.weight(1f),
+                        label = { Text("版本名") },
+                        singleLine = true,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = canConfirm,
+            ) {
+                Text("生成并安装")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+*/
+@Composable
+private fun StandaloneExportIcon(iconUri: Uri?, size: Dp) {
+    val context = LocalContext.current
+    val selectedBitmap = remember(iconUri) {
+        iconUri?.let { uri ->
+            runCatching {
+                context.contentResolver.openInputStream(uri).use { input ->
+                    input?.let { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+                }
+            }.getOrNull()
+        }
+    }
+
+    if (selectedBitmap != null) {
+        Image(
+            bitmap = selectedBitmap,
+            contentDescription = null,
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(12.dp)),
+            contentScale = ContentScale.Crop,
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "V",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+private fun defaultStandalonePackageName(entry: GameEntry): String {
+    val suffix = entry.id
+        .filter { it.isLetterOrDigit() }
+        .lowercase(Locale.US)
+        .take(24)
+        .ifBlank { "game" }
+    return "io.github.mkxpz.game.g$suffix"
+}
+
+private fun isValidStandalonePackageName(value: String): Boolean =
+    standalonePackageRegex.matches(value)
+
+private val standalonePackageRegex = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
+
+@Composable
 private fun SettingsScreen(
     settings: LauncherSettings,
     allFilesAccessGranted: Boolean,
@@ -395,13 +839,23 @@ private fun SettingsScreen(
     onPreferredImportModeChange: (PreferredImportMode) -> Unit,
     onVirtualGamepadChange: (Boolean) -> Unit,
     onVirtualGamepadOpacityChange: (Int) -> Unit,
-    onVirtualGamepadScaleChange: (Int) -> Unit,
     onVirtualGamepadDiagonalMovementChange: (Boolean) -> Unit,
     onVirtualGamepadKeyChange: (VirtualGamepadButton, Int) -> Unit,
+    onPhysicalGamepadMappingChange: (Boolean) -> Unit,
+    onPhysicalGamepadBackAsBChange: (Boolean) -> Unit,
+    onPhysicalGamepadKeyChange: (PhysicalGamepadButton, Int) -> Unit,
     onFixedFramerateChange: (Int) -> Unit,
     onSmoothScalingChange: (Boolean) -> Unit,
     onKeepAspectRatioChange: (Boolean) -> Unit,
     onSoundFontPathChange: (String) -> Unit,
+    onVxRtpPathChange: (String) -> Unit,
+    onVxAceRtpPathChange: (String) -> Unit,
+    onDownloadVxRtp: () -> Unit,
+    onDownloadVxAceRtp: () -> Unit,
+    onChooseVxRtpFolder: () -> Unit,
+    onChooseVxAceRtpFolder: () -> Unit,
+    onRubyClassicCompatibilityChange: (Boolean) -> Unit,
+    onWinApiCompatibilityChange: (Boolean) -> Unit,
     onDebugLaunchChange: (Boolean) -> Unit,
 ) {
     LazyColumn(
@@ -466,14 +920,36 @@ private fun SettingsScreen(
                 VirtualGamepadConfigSection(
                     settings = settings,
                     onOpacityChange = onVirtualGamepadOpacityChange,
-                    onScaleChange = onVirtualGamepadScaleChange,
                     onDiagonalMovementChange = onVirtualGamepadDiagonalMovementChange,
                     onKeyChange = onVirtualGamepadKeyChange,
+                )
+                Spacer(Modifier.height(8.dp))
+                SwitchRow(
+                    "实体手柄映射",
+                    "把手柄按键转换成播放器键位，避免 B 键触发系统返回",
+                    settings.physicalGamepadMappingEnabled,
+                    onPhysicalGamepadMappingChange,
+                )
+                SwitchRow(
+                    "手柄 Back 当作 B",
+                    "部分手柄会把 B 发成系统返回键；开启后按取消键处理",
+                    settings.physicalGamepadBackAsB,
+                    onPhysicalGamepadBackAsBChange,
+                )
+                PhysicalGamepadConfigSection(
+                    settings = settings,
+                    onKeyChange = onPhysicalGamepadKeyChange,
                 )
                 Spacer(Modifier.height(8.dp))
                 SwitchRow("保持宽高比", "避免拉伸游戏画面", settings.keepAspectRatio, onKeepAspectRatioChange)
                 SwitchRow("平滑缩放", "放大时启用线性插值", settings.smoothScaling, onSmoothScalingChange)
                 SwitchRow("调试启动", "生成配置时启用 FPS 输出", settings.debugLaunch, onDebugLaunchChange)
+                SwitchRow(
+                    "Ruby 经典兼容",
+                    "修复 VX/VX Ace 旧脚本的顶层变量和 Ruby 1.9 差异",
+                    settings.rubyClassicCompatibilityEnabled,
+                    onRubyClassicCompatibilityChange,
+                )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = if (settings.fixedFramerate == 0) "固定帧率：关闭" else "固定帧率：${settings.fixedFramerate} FPS",
@@ -486,6 +962,12 @@ private fun SettingsScreen(
                     valueRange = 0f..120f,
                     steps = 119,
                 )
+                SwitchRow(
+                    "WinAPI 兼容",
+                    "检测到 Ruby Win32API/WinAPI 脚本时自动加载兼容层",
+                    settings.winApiCompatibilityEnabled,
+                    onWinApiCompatibilityChange,
+                )
                 OutlinedTextField(
                     value = settings.soundFontPath,
                     onValueChange = onSoundFontPathChange,
@@ -493,6 +975,84 @@ private fun SettingsScreen(
                     label = { Text("SoundFont 路径") },
                     singleLine = true,
                     placeholder = { Text("例如 /storage/emulated/0/GMGSx.sf2") },
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "VX RTP",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = if (settings.vxRtpPath.isBlank()) {
+                        "未设置；依赖 VX RTP 的游戏可能缺少图像或音频。"
+                    } else {
+                        "已设置；启动 VX 游戏时会自动加入 mkxp-z RTP 搜索路径。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = onDownloadVxRtp) {
+                        Text("自动下载")
+                    }
+                    OutlinedButton(onClick = onChooseVxRtpFolder) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("导入 VX RTP")
+                    }
+                    if (settings.vxRtpPath.isNotBlank()) {
+                        TextButton(onClick = { onVxRtpPathChange("") }) {
+                            Text("清除")
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = settings.vxRtpPath,
+                    onValueChange = onVxRtpPathChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("VX RTP 路径") },
+                    singleLine = true,
+                    placeholder = { Text("选择 RPGVX 文件夹，或输入已解压 RTP 路径") },
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "VX Ace RTP",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = if (settings.vxAceRtpPath.isBlank()) {
+                        "未设置；依赖 VX Ace RTP 的加密包可能没有声音或缺少素材。"
+                    } else {
+                        "已设置；启动 VX Ace 游戏时会自动加入 mkxp-z RTP 搜索路径。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = onDownloadVxAceRtp) {
+                        Text("下载 VX Ace RTP")
+                    }
+                    OutlinedButton(onClick = onChooseVxAceRtpFolder) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("导入 VX Ace RTP")
+                    }
+                    if (settings.vxAceRtpPath.isNotBlank()) {
+                        TextButton(onClick = { onVxAceRtpPathChange("") }) {
+                            Text("清除")
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = settings.vxAceRtpPath,
+                    onValueChange = onVxAceRtpPathChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("VX Ace RTP 路径") },
+                    singleLine = true,
+                    placeholder = { Text("选择 RPGVXAce 文件夹，或输入已解压 RTP 路径") },
                 )
             }
         }
@@ -566,7 +1126,6 @@ private fun SwitchRow(
 private fun VirtualGamepadConfigSection(
     settings: LauncherSettings,
     onOpacityChange: (Int) -> Unit,
-    onScaleChange: (Int) -> Unit,
     onDiagonalMovementChange: (Boolean) -> Unit,
     onKeyChange: (VirtualGamepadButton, Int) -> Unit,
 ) {
@@ -589,18 +1148,6 @@ private fun VirtualGamepadConfigSection(
             steps = 94,
             enabled = settings.virtualGamepadEnabled,
         )
-        Text(
-            text = "大小：${settings.virtualGamepadScale}%",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-        )
-        androidx.compose.material3.Slider(
-            value = settings.virtualGamepadScale.toFloat(),
-            onValueChange = { onScaleChange(it.toInt()) },
-            valueRange = 60f..160f,
-            steps = 99,
-            enabled = settings.virtualGamepadEnabled,
-        )
         SwitchRow(
             title = "方向键斜向移动",
             subtitle = "允许上左、上右、下左、下右输入",
@@ -620,6 +1167,58 @@ private fun VirtualGamepadConfigSection(
                     OutlinedButton(
                         onClick = { showKeyDialogFor = button },
                         enabled = settings.virtualGamepadEnabled,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            text = "${button.displayLabel()}: ${keyLabel(settings.keyCodeFor(button))}",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    showKeyDialogFor?.let { button ->
+        KeyPickerDialog(
+            title = "${button.displayLabel()} 映射",
+            selectedKeyCode = settings.keyCodeFor(button),
+            onDismiss = { showKeyDialogFor = null },
+            onSelected = { keyCode ->
+                showKeyDialogFor = null
+                onKeyChange(button, keyCode)
+            },
+        )
+    }
+}
+
+@Composable
+private fun PhysicalGamepadConfigSection(
+    settings: LauncherSettings,
+    onKeyChange: (PhysicalGamepadButton, Int) -> Unit,
+) {
+    var showKeyDialogFor by remember { mutableStateOf<PhysicalGamepadButton?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, top = 2.dp, bottom = 6.dp),
+    ) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "实体手柄按键",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.height(6.dp))
+        physicalGamepadButtons.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { button ->
+                    OutlinedButton(
+                        onClick = { showKeyDialogFor = button },
+                        enabled = settings.physicalGamepadMappingEnabled,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(
@@ -803,6 +1402,74 @@ private fun DeleteDialog(
 }
 
 @Composable
+private fun EditGameDialog(
+    entry: GameEntry,
+    title: String,
+    selectedIconUri: Uri?,
+    clearIcon: Boolean,
+    onTitleChange: (String) -> Unit,
+    onChooseIcon: () -> Unit,
+    onClearIcon: () -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑游戏") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GameIcon(
+                        entry = entry,
+                        size = 64.dp,
+                        selectedIconUri = selectedIconUri,
+                        clearIcon = clearIcon,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onChooseIcon) {
+                            Icon(Icons.Default.Image, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("选择图标")
+                        }
+                        if (entry.customIconPath != null || selectedIconUri != null) {
+                            TextButton(onClick = onClearIcon) {
+                                Text("恢复默认图标")
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = onTitleChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("游戏名称") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = entry.installedPath,
+                    onValueChange = {},
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("游戏路径") },
+                    enabled = false,
+                    maxLines = 2,
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = title.trim().isNotBlank()) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
 private fun BusyOverlay(message: String) {
     Box(
         modifier = Modifier
@@ -832,6 +1499,7 @@ private fun RpgMakerEngine.shortLabel(): String = when (this) {
     RpgMakerEngine.VX_ACE -> "VA"
     RpgMakerEngine.MV -> "MV"
     RpgMakerEngine.MZ -> "MZ"
+    RpgMakerEngine.RPG_2000_2003 -> "2K"
     RpgMakerEngine.UNKNOWN -> "RG"
 }
 
@@ -858,6 +1526,21 @@ private val virtualGamepadButtons = listOf(
     VirtualGamepadButton.CTRL,
     VirtualGamepadButton.ALT,
     VirtualGamepadButton.SHIFT,
+    VirtualGamepadButton.RUN,
+)
+
+private val physicalGamepadButtons = listOf(
+    PhysicalGamepadButton.A,
+    PhysicalGamepadButton.B,
+    PhysicalGamepadButton.X,
+    PhysicalGamepadButton.Y,
+    PhysicalGamepadButton.L1,
+    PhysicalGamepadButton.R1,
+    PhysicalGamepadButton.L2,
+    PhysicalGamepadButton.R2,
+    PhysicalGamepadButton.START,
+    PhysicalGamepadButton.SELECT,
+    PhysicalGamepadButton.RUN,
 )
 
 private val commonKeyCodes = listOf(
@@ -893,6 +1576,21 @@ private fun VirtualGamepadButton.displayLabel(): String = when (this) {
     VirtualGamepadButton.CTRL -> "CTRL"
     VirtualGamepadButton.ALT -> "ALT"
     VirtualGamepadButton.SHIFT -> "SHIFT"
+    VirtualGamepadButton.RUN -> "RUN"
+}
+
+private fun PhysicalGamepadButton.displayLabel(): String = when (this) {
+    PhysicalGamepadButton.A -> "A"
+    PhysicalGamepadButton.B -> "B"
+    PhysicalGamepadButton.X -> "X"
+    PhysicalGamepadButton.Y -> "Y"
+    PhysicalGamepadButton.L1 -> "L1"
+    PhysicalGamepadButton.R1 -> "R1"
+    PhysicalGamepadButton.L2 -> "L2"
+    PhysicalGamepadButton.R2 -> "R2"
+    PhysicalGamepadButton.START -> "START"
+    PhysicalGamepadButton.SELECT -> "SELECT"
+    PhysicalGamepadButton.RUN -> "RUN"
 }
 
 private fun LauncherSettings.keyCodeFor(button: VirtualGamepadButton): Int = when (button) {
@@ -907,6 +1605,21 @@ private fun LauncherSettings.keyCodeFor(button: VirtualGamepadButton): Int = whe
     VirtualGamepadButton.CTRL -> virtualGamepadKeyCtrl
     VirtualGamepadButton.ALT -> virtualGamepadKeyAlt
     VirtualGamepadButton.SHIFT -> virtualGamepadKeyShift
+    VirtualGamepadButton.RUN -> virtualGamepadKeyRun
+}
+
+private fun LauncherSettings.keyCodeFor(button: PhysicalGamepadButton): Int = when (button) {
+    PhysicalGamepadButton.A -> physicalGamepadKeyA
+    PhysicalGamepadButton.B -> physicalGamepadKeyB
+    PhysicalGamepadButton.X -> physicalGamepadKeyX
+    PhysicalGamepadButton.Y -> physicalGamepadKeyY
+    PhysicalGamepadButton.L1 -> physicalGamepadKeyL1
+    PhysicalGamepadButton.R1 -> physicalGamepadKeyR1
+    PhysicalGamepadButton.L2 -> physicalGamepadKeyL2
+    PhysicalGamepadButton.R2 -> physicalGamepadKeyR2
+    PhysicalGamepadButton.START -> physicalGamepadKeyStart
+    PhysicalGamepadButton.SELECT -> physicalGamepadKeySelect
+    PhysicalGamepadButton.RUN -> physicalGamepadKeyRun
 }
 
 private fun keyLabel(keyCode: Int): String =

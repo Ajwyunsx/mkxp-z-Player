@@ -202,7 +202,7 @@
 
     <RelativeLayout
         android:id="@+id/buttons_mod_layout"
-        android:layout_width="@dimen/_145sdp"
+        android:layout_width="wrap_content"
         android:layout_height="@dimen/_23sdp"
         android:layout_alignParentBottom="true"
         android:layout_centerHorizontal="true"
@@ -245,6 +245,17 @@
             <com.hatkid.mkxpz.gamepad.GamepadButton
                 android:id="@+id/button_SHIFT"
                 android:layout_width="@dimen/_40sdp"
+                android:layout_height="@dimen/_20sdp"
+                android:layout_marginStart="@dimen/_4sdp"
+                android:layout_marginTop="@dimen/_2sdp"
+                android:layout_marginEnd="@dimen/_4sdp"
+                android:layout_marginBottom="@dimen/_2sdp"
+                app:bgDrawable="@drawable/gamepad_button_square"
+                tools:ignore="ImageContrastCheck"
+            />
+            <com.hatkid.mkxpz.gamepad.GamepadButton
+                android:id="@+id/button_RUN"
+                android:layout_width="@dimen/_44sdp"
                 android:layout_height="@dimen/_20sdp"
                 android:layout_marginStart="@dimen/_4sdp"
                 android:layout_marginTop="@dimen/_2sdp"

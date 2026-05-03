@@ -14,7 +14,9 @@ class AppContainer(context: Context) {
         appContext,
         AppDatabase::class.java,
         "mkxp_player.db",
-    ).build()
+    )
+        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+        .build()
 
     val settingsRepository = SettingsRepository(appContext)
     private val configWriter = MkxpConfigWriter()
@@ -37,6 +39,5 @@ class AppContainer(context: Context) {
         context = appContext,
         repository = gameRepository,
         settingsRepository = settingsRepository,
-        configWriter = configWriter,
     )
 }
